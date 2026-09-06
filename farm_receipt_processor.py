@@ -109,7 +109,7 @@ def download_new_receipts(download_dir):
         
         # FAILSAFE 1: Gather strictly UNREAD messages
         status, messages = mail.search(None, '(UNSEEN)')
-        email_ids = messages.split()
+        email_ids = messages[0].split()
         
         for e_id in email_ids:
             status, data = mail.fetch(e_id, '(RFC822)')
