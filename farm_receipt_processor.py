@@ -18,7 +18,7 @@ import pytesseract
 # Securely grab passwords from your GitHub Secret Vault
 EMAIL_USER = os.getenv("EMAIL_USER", "your_local_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_local_config_pass")
-IMAP_SERVER = "://gmail.com"
+IMAP_SERVER = "imap.gmail.com"
 
 # --- SMART CATEGORIZATION DEFINITIONS ---
 KEYWORDS_COWS = ['cow', 'cattle', 'calf', 'heifer', 'bull', 'steer', 'bovine', 'vet', 'ear tag', 'sweet feed', 'milking', 'dehorner']
