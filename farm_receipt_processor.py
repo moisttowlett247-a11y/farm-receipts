@@ -235,26 +235,28 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                     estimated_total = extract_basic_amount(extracted_text)
                     
                     # Parse approximate Vendor (top clean text lines)
-lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
-vendor = lines[0] if lines else "Unknown Vendor"
-vendor = re.sub(r'[\/*?:"<>|]', "", vendor)[:20]
-new_filename = f"{category.replace(':', '-')}{vendor.replace(' ', '')}{filename}"
-final_processed_path = os.path.join(processed_dir, new_filename)
-os.rename(file_path, final_processed_path)
-
-# Write formatted tracking data into the master daily file
-log_block = (
-    f"File Name: {new_filename}\n"
-    f"Category:  {category}\n"
-    f"Vendor:    {vendor}\n"
-    f"Amount:    {estimated_total}\n"
-    f"--------------------------------------------------\n"
-)
-log.write(log_block)
-print(f"Completed: {new_filename}")
-
-except Exception as file_error:
-    print(f"Could not read {filename}: {file_error}")
+                    lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
+                    vendor = lines if lines else "Unknown Vendor"
+                    vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
+                    
+                    new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
+                    final_processed_path = os.path.join(processed_dir, new_filename)
+                    
+                    os.rename(file_path, final_processed_path)
+                    
+                    # Write formatted tracking data into the master daily file
+                    log_block = (
+                        f"File Name: {new_filename}\n"
+                        f"Category:  {category}\n"
+                        f"Vendor:    {vendor}\n"
+                        f"Amount:    {estimated_total}\n"
+                        f"--------------------------------------------------\n"
+                    )
+                    log.write(log_block)
+                    print(f"Completed: {new_filename}")
+                    
+                except Exception as file_error:
+                    print(f"Could not read {filename}: {file_error}")
 
 # =====================================================================
 # MAIN AUTOMATION ENTRY
