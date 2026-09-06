@@ -105,15 +105,25 @@ def download_new_receipts(download_dir):
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
+        
+        # Select the All Mail folder using proper outer single and inner double quotes
         mail.select('"[Gmail]/All Mail"')
         
         # FAILSAFE 1: Gather strictly UNREAD messages
-        status, messages = mail.search(None, '(UNSEEN)')
-        email_ids = messages[0].split()
+        status, data = mail.search(None, '(UNSEEN)')
+        
+        # Standard bulletproof extraction of email IDs from the IMAP list data
+        if status == 'OK' and data[0]:
+            email_ids = data[0].split()
+        else:
+            email_ids = []
         
         for e_id in email_ids:
             status, data = mail.fetch(e_id, '(RFC822)')
-            raw_email = data
+            if status != 'OK':
+                continue
+                
+            raw_email = data[0][1]
             msg = email.message_from_bytes(raw_email)
             
             has_valid_attachments = False
