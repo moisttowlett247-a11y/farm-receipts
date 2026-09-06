@@ -105,7 +105,7 @@ def download_new_receipts(download_dir):
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("inbox")
+        mail.select("[Gmail]/All Mail")
         
         # FAILSAFE 1: Gather strictly UNREAD messages
         status, messages = mail.search(None, '(UNSEEN)')
