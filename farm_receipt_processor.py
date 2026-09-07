@@ -76,38 +76,33 @@ def download_new_receipts():
             if status != 'OK' or not header_data:
                 continue
                 
-            # Safely unpack raw sender text from the nested list-tuple layout
-            try:
-                if isinstance(header_data, list) and len(header_data) > 0:
-                    raw_header_bytes = header_data[0][1]
-                else:
-                    raw_header_bytes = b""
-                header_text = raw_header_bytes.decode('utf-8', errors='ignore').lower()
-            except (IndexError, TypeError, AttributeError):
-                header_text = ""
+            # DYNAMIC UNPACKING: Safely loop through elements to locate raw bytes instantly
+            header_text = ""
+            if isinstance(header_data, list):
+                for item in header_data:
+                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
+                        header_text = item[1].decode('utf-8', errors='ignore').lower()
+                        break
             
             # ANTI-SPAM PROTECTION: Skip the message immediately if it doesn't match your trusted pool
             if TRUSTED_SENDERS:
                 if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
                     continue
             
-            # Confirmed trusted sender -> Fetch full email bytes safely
+            # Confirmed trusted sender -> Fetch full email payload safely
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            # Safely extract and unpack the raw email bytes from the list container instantly
-            try:
-                if isinstance(fetch_data, list) and len(fetch_data) > 0:
-                    raw_bytes = fetch_data[0][1]
-                else:
-                    raw_bytes = b""
-                    
-                if isinstance(raw_bytes, bytes) and len(raw_bytes) > 0:
-                    msg = email.message_from_bytes(raw_bytes)
-                else:
-                    continue
-            except (IndexError, TypeError):
+            # DYNAMIC UNPACKING: Locate and build the email message object cleanly without indexing risks
+            msg = None
+            if isinstance(fetch_data, list):
+                for item in fetch_data:
+                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
+                        msg = email.message_from_bytes(item[1])
+                        break
+            
+            if msg is None:
                 continue
             
             has_valid_attachments = False
