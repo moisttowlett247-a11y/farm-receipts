@@ -47,3 +47,15 @@ Amount: $[Amount Not Found]
 Items:
   - Extraction warning: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements. We recommend you to use the Interactions API.', 'status': 'NOT_FOUND'}}
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-07 23:13:10
+==================================================
+File Name: Farm-General__Unknown_Vendor___1000002267.jpg
+Category: Farm:General
+Vendor: Unknown_Vendor
+Receipt Date: [Date Not Found]
+Amount: $[Amount Not Found]
+Items:
+  - Extraction warning: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+--------------------------------------------------
