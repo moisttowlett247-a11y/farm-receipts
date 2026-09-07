@@ -187,7 +187,7 @@ def process_single_memory_receipt(args):
     
     formatted_items = ""
     for item in items_list:
-    formatted_items += f"  - {item}\n"
+        formatted_items += f"  - {item}\n"
     if not formatted_items:
         formatted_items = "  - [No Items Found]\n"
     
