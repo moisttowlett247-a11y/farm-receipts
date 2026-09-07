@@ -18,3 +18,16 @@ jobs:
     - name: Install Official Google GenAI SDK Packages
       run: |
         pip install google-genai pillow
+    - name: Execute Automation Script
+      env:
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python farm_receipt_processor.py
+
+    - name: Commit and Save Finished Folders to GitHub Cloud
+      run: |
+        git config --global user.name "Receipt Bot"
+        git config --global user.email "bot@github.com"
+        git add Receipts_Processed/
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-saved processed receipts [skip ci]" && git push)
