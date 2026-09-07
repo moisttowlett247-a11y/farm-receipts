@@ -62,3 +62,21 @@ Items:
   - Tape - $2.00
   - Air gauge - $3.00
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-07 05:46:04
+==================================================
+File Name: Farm-General__Unknown_Vendor___1000002228.jpg
+Category: Farm:General
+Vendor: Unknown_Vendor
+Amount: \$[Amount Not Found]
+Items:
+  - Error: Cloud traffic spike. Please run workflow again.
+--------------------------------------------------
+File Name: Farm-General__Unknown_Vendor___1000002240.jpg
+Category: Farm:General
+Vendor: Unknown_Vendor
+Amount: \$[Amount Not Found]
+Items:
+  - Error: Cloud traffic spike. Please run workflow again.
+--------------------------------------------------
