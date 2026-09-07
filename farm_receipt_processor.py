@@ -2,112 +2,33 @@ import imaplib
 import email
 import os
 import re
+import json
 from datetime import datetime
-from PIL import Image
-import cv2
-import numpy as np
-import pytesseract
+import http.client
 
 # =====================================================================
 # CONFIGURATION
 # =====================================================================
 EMAIL_USER = os.getenv("EMAIL_USER", "your_local_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_local_config_pass")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 IMAP_SERVER = "imap.gmail.com"
 
-# --- SMART CATEGORIZATION DEFINITIONS ---
-KEYWORDS_COWS = ['cow', 'cattle', 'calf', 'heifer', 'bull', 'steer', 'bovine', 'vet', 'ear tag', 'sweet feed', 'milking', 'dehorner']
-KEYWORDS_CHICKENS = ['chicken', 'chick', 'hen', 'rooster', 'coop', 'poultry', 'scratch', 'egg', 'brooder', 'wire mesh', 'netting']
-CATTLE_SCALE_WORDS = ['50 lb', '50lb', 'block', 'bulk', 'pallet', '50-pound', 'mineral block']
-
-VENDORS_CHICKEN_ONLY = ['meyer hatchery', 'mcmurray', 'poultrysupply']
-VENDORS_COW_ONLY = ['valley vet', 'cattle store', 'livestock direct']
-
-# =====================================================================
-# DIRECTORY & FILE SETUP
-# =====================================================================
 def get_current_date_str():
-    """Returns today's date formatted as YYYY-MM-DD."""
     return datetime.now().strftime("%Y-%m-%d")
 
 def setup_folders():
-    """Creates daily folders for organized tracking."""
     today = get_current_date_str()
     download_path = os.path.join("./Receipts_Downloaded", today)
     processed_path = os.path.join("./Receipts_Processed", today)
-    
     os.makedirs(download_path, exist_ok=True)
     os.makedirs(processed_path, exist_ok=True)
     return download_path, processed_path
 
 # =====================================================================
-# FREE VISION PRE-PROCESSING & SPLITTING ENGINES
-# =====================================================================
-def optimize_image_for_ocr(image_path):
-    """
-    Applies filters to neutralize dark phone shadows, brighten paper text,
-    and erase heavy black line borders so Tesseract can see boxed totals.
-    """
-    img = cv2.imread(image_path)
-    if img is None:
-        return image_path
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    processed_img = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 15
-    )
-
-    cv2.imwrite(image_path, processed_img)
-    return image_path
-
-def split_multiple_receipts(image_path, download_dir):
-    """
-    Smarter receipt handler. Uses an incredibly high area threshold 
-    so shadows and long layouts do not accidentally rip a single receipt apart.
-    """
-    image = cv2.imread(image_path)
-    if image is None:
-        return [image_path]
-        
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (11, 11), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    cropped_files = []
-    receipt_count = 0
-    base_name = os.path.basename(image_path)
-    
-    for contour in contours:
-        if cv2.contourArea(contour) > 350000:  
-            x, y, w, h = cv2.boundingRect(contour)
-            
-            if w > 150 and h > 150:
-                cropped_img = image[y:y+h, x:x+w]
-                cropped_filename = f"split_{receipt_count}_{base_name}"
-                cropped_path = os.path.join(download_dir, cropped_filename)
-                
-                cv2.imwrite(cropped_path, cropped_img)
-                cropped_files.append(cropped_path)
-                receipt_count += 1
-                
-    if len(cropped_files) <= 1:
-        return [image_path]
-        
-    try:
-        os.remove(image_path)
-    except OSError:
-        pass
-    return cropped_files
-
-# =====================================================================
-# EMAIL HARVESTER & ARCHIVER (IMAP FAILSAFES)
+# INDESTRUCTIBLE EMAIL HARVESTER
 # =====================================================================
 def download_new_receipts(download_dir):
-    """
-    Connects to email, harvests unread receipt attachments, and archives them.
-    """
     saved_files = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -118,19 +39,15 @@ def download_new_receipts(download_dir):
         email_ids = []
         
         if status == 'OK' and data and isinstance(data, list):
-            # Target the first actual byte-string element inside the list envelope
             raw_data = data[0]
             if isinstance(raw_data, bytes):
                 email_ids = raw_data.decode('utf-8').split()
-            elif isinstance(raw_data, str):
-                email_ids = raw_data.split()
         
         for e_id in email_ids:
             status, fetch_data = mail.fetch(e_id, '(RFC822)')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            # Unpack the raw email body string securely
             raw_email = fetch_data[0][1]
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
@@ -138,7 +55,6 @@ def download_new_receipts(download_dir):
                 continue
             
             has_valid_attachments = False
-            
             for part in msg.walk():
                 if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
                     continue
@@ -146,15 +62,11 @@ def download_new_receipts(download_dir):
                 filename = part.get_filename()
                 if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
                     filepath = os.path.join(download_dir, filename)
-                    
                     if os.path.exists(filepath):
-                        timestamp_prefix = datetime.now().strftime("%H%M%S_")
-                        filename = timestamp_prefix + filename
-                        filepath = os.path.join(download_dir, filename)
+                        filepath = os.path.join(download_dir, f"{datetime.now().strftime('%H%M%S_')}{filename}")
                         
                     with open(filepath, 'wb') as f:
                         f.write(part.get_payload(decode=True))
-                        
                     saved_files.append(filepath)
                     has_valid_attachments = True
             
@@ -171,125 +83,105 @@ def download_new_receipts(download_dir):
         mail.logout()
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
-        
     return saved_files
 
 # =====================================================================
-# INTELLIGENT RULE INTERPRETER (CONTEXT SEARCH)
+# HIGH-SPEED FREE GOOGLE CLOUD VISION ENGINE
 # =====================================================================
-def determine_subcategory(text):
-    """Context-aware category mapping rules."""
-    text_lower = text.lower()
-    
-    if any(vendor in text_lower for vendor in VENDORS_CHICKEN_ONLY):
-        return "Farm:Chickens"
-    if any(vendor in text_lower for vendor in VENDORS_COW_ONLY):
-        return "Farm:Cows"
+def analyze_image_with_gemini(file_path):
+    """Leverages Google's cloud server to parse totals and categories in milliseconds."""
+    try:
+        with open(file_path, "rb") as image_file:
+            import base64
+            image_data = base64.b64encode(image_file.read()).decode("utf-8")
+            
+        # Determine image format type
+        mime_type = "image/jpeg" if file_path.lower().endswith(('.jpg', '.jpeg')) else "image/png"
         
-    has_chicken_clues = any(kw in text_lower for kw in KEYWORDS_CHICKENS)
-    has_cow_clues = any(kw in text_lower for kw in KEYWORDS_COWS)
-    
-    if has_chicken_clues and not has_cow_clues:
-        return "Farm:Chickens"
-    if has_cow_clues and not has_chicken_clues:
-        return "Farm:Cows"
+        # Craft a precise visual directive request
+        prompt = (
+            "Analyze this receipt image. Even if there are dark shadows or boxed lines, look for the final mathematical Grand Total. "
+            "Extract the accurate vendor name (the company title at the top). "
+            "Categorize the transaction into one of these three exact subcategories: "
+            "1. 'Farm:Cows' (for cattle feed, ear tags, vet care, mineral blocks, etc.) "
+            "2. 'Farm:Chickens' (for poultry scratch, wire netting, coops, heat lamps, etc.) "
+            "3. 'Farm:General' (for compressors, tools, hardware, fuel, items matching neither animal). "
+            "Provide the answer strictly as a clean JSON layout block with keys 'vendor', 'total', and 'category'. Do not include markdown code block styling ticks."
+        )
         
-    if 'salt' in text_lower or 'vinegar' in text_lower:
-        if any(scale_word in text_lower for scale_word in CATTLE_SCALE_WORDS):
-            return "Farm:Cows"
-        else:
-            return "Farm:Chickens"
-
-    if any(kw in text_lower for kw in KEYWORDS_COWS):
-        return "Farm:Cows"
-    if any(kw in text_lower for kw in KEYWORDS_CHICKENS):
-        return "Farm:Chickens"
+        # Build raw request payload
+        payload = json.dumps({
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": mime_type, "data": image_data}}
+                ]
+            }]
+        })
         
-    return "Farm:General"
-
-def extract_basic_amount(text):
-    """Safeguard math price tool utilizing absolute maximum scanning methods."""
-    amounts = re.findall(r'\b\d+\.\d{2}\b', text)
-    if amounts:
-        float_amounts = [float(a) for a in amounts]
-        grand_total = max(float_amounts)
-        return f"${grand_total:.2f}"
-    return "[Amount Not Found]"
+        # Execute direct low-level API call to avoid importing heavy third-party SDK libraries
+        conn = http.client.HTTPSConnection("://googleapis.com")
+        headers = {'Content-Type': 'application/json'}
+        conn.request("POST", f"/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}", payload, headers)
+        
+        response = conn.getresponse()
+        data = response.read().decode("utf-8")
+        conn.close()
+        
+        # Unpack result strings cleanly
+        result_json = json.loads(data)
+        text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
+        
+        # Clean potential markdown layout wrappers if present
+        text_response = text_response.replace("```json", "").replace("```", "").strip()
+        return json.loads(text_response)
+    except Exception as e:
+        print(f"Cloud analysis error fallback triggered: {e}")
+        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
 
 # =====================================================================
-# BATCH WORKFLOW CORE
+# BATCH EXECUTION MAIN PIPELINE
 # =====================================================================
-def process_receipts(downloaded_files, processed_dir, download_dir):
-    """Unpacks sheets, optimizes contrast boundaries, scans text, and writes to log."""
+def process_receipts(downloaded_files, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"==================================================\n")
-        for primary_file in downloaded_files:
-            sub_files = split_multiple_receipts(primary_file, download_dir)
+        
+        for file_path in downloaded_files:
+            filename = os.path.basename(file_path)
+            print(f"Offloading cloud analysis for: {filename}...")
             
-            for file_path in sub_files:
-                filename = os.path.basename(file_path)
-                print(f"Optimizing image contrast and scanning: {filename}...")
-                
-                try:
-                    optimized_path = optimize_image_for_ocr(file_path)
-                    extracted_text = pytesseract.image_to_string(optimized_path)
-                    
-                    category = determine_subcategory(extracted_text)
-                    estimated_total = extract_basic_amount(extracted_text)
-                    
-                    lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
-                    
-                    # Advanced Filter Loop: Look down top 5 lines for alphabetical store string
-                                        # Advanced Filter Loop: Look down top 5 lines for alphabetical store string
-                    vendor = "Unknown Vendor"
-                    for candidate_line in lines[:5]:
-                        clean_candidate = re.sub(r'[^a-zA-Z\s]', '', candidate_line).strip()
-                        if len(clean_candidate) > 3:
-                            vendor = candidate_line
-                            break
-                    
-                    # SMART CORRECTION DICTIONARY: Maps ugly free OCR glitches directly to real names
-                    # You can add more mapping nicknames here if you find other messy logos later!
-                    vendor_lower = vendor.lower()
-                    if any(glitch in vendor_lower for glitch in ['senate', 'jpeing', 'tool', 'store', 'ol s', 'oo s']):
-                        vendor = "The Tool Store"
-                    elif any(glitch in vendor_lower for glitch in ['tractor', 'supply', 'tsc']):
-                        vendor = "Tractor Supply"
-                    elif any(glitch in vendor_lower for glitch in ['wal', 'mart', 'wmt']):
-                        vendor = "Walmart"
-                            
-                    vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
-                    new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
-                    final_processed_path = os.path.join(processed_dir, new_filename)
-                    
-                    os.rename(optimized_path, final_processed_path)
-                    
-                    log_block = (
-                        f"File Name: {new_filename}\n"
-                        f"Category:  {category}\n"
-                        f"Vendor:    {vendor}\n"
-                        f"Amount:    {estimated_total}\n"
-                        f"--------------------------------------------------\n"
-                    )
-                    log.write(log_block)
-                    print(f"Completed: {new_filename}")
-                    
-                except Exception as file_error:
-                    print(f"Could not read {filename}: {file_error}")
+            # Send file token directly to Google's backend engine
+            data = analyze_image_with_gemini(file_path)
+            
+            vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20]
+            category = data.get('category', 'Farm:General')
+            total = data.get('total', '[Amount Not Found]')
+            
+            new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
+            final_processed_path = os.path.join(processed_dir, new_filename)
+            
+            os.rename(file_path, final_processed_path)
+            
+            log_block = (
+                f"File Name: {new_filename}\n"
+                f"Category:  {category}\n"
+                f"Vendor:    {vendor}\n"
+                f"Amount:    {total}\n"
+                f"--------------------------------------------------\n"
+            )
+            log.write(log_block)
+            print(f"Completed: {new_filename}")
 
-# =====================================================================
-# MAIN AUTOMATION ENTRY
-# =====================================================================
 if __name__ == "__main__":
     print("Free Farm Receipt Processor System Initialized.")
     download_folder, processed_folder = setup_folders()
     new_paths = download_new_receipts(download_folder)
     
     if new_paths:
-        process_receipts(new_paths, processed_folder, download_folder)
+        process_receipts(new_paths, processed_folder)
     else:
         print("Inbox check clear. No unread receipt attachments detected.")
