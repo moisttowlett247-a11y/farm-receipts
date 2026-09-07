@@ -63,7 +63,7 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not structure_data:
                 continue
             
-                        raw_struct = str(structure_data).lower()
+                raw_struct = str(structure_data).lower()
             # FIX: Detect images OR multipart wrappers containing multiple file attachments
             if not any(x in raw_struct for x in ['image/png', 'image/jpeg', 'image/jpg', 'multipart/mixed', 'multipart/related']):
                 continue
