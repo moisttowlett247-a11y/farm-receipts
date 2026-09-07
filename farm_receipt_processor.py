@@ -139,12 +139,13 @@ def analyze_image_with_gemini(img_obj):
     
     for attempt in range(max_retries):
         try:
-            prompt = (
+                        prompt = (
                 "Analyze this receipt image and extract data into a strict JSON layout.\n"
                 "1. Identify the store name as 'vendor'.\n"
                 "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
                 "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-                "4. Read the text lines and pull a list of all purchased individual products into 'items'. "
+                "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
+                "5. Read the text lines and pull a list of all purchased individual products into 'items'. "
                 "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
                 "and its corresponding item price matching the line layout."
             )
@@ -160,15 +161,17 @@ def analyze_image_with_gemini(img_obj):
                             "vendor": types.Schema(type=types.Type.STRING),
                             "total": types.Schema(type=types.Type.STRING),
                             "category": types.Schema(type=types.Type.STRING),
+                            "date": types.Schema(type=types.Type.STRING), # Added parameter track
                             "items": types.Schema(
                                 type=types.Type.ARRAY,
                                 items=types.Schema(type=types.Type.STRING)
                             ),
                         },
-                        required=["vendor", "total", "category", "items"],
+                        required=["vendor", "total", "category", "date", "items"], # Added requirement
                     ),
                 ),
             )
+)
             
             return json.loads(response.text.strip())
             
@@ -200,6 +203,7 @@ def process_single_memory_receipt(receipt_data):
     vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
     category = data.get('category', 'Farm:General')
     total = data.get('total', '[Amount Not Found]')
+    receipt_date = data.get('date', '[Date Not Found]') # Added variable capture
     items_list = data.get('items', [])
     
     if total and not str(total).startswith('$'):
@@ -213,10 +217,12 @@ def process_single_memory_receipt(receipt_data):
     
     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
     
+    # Integrated receipt_date directly into the text layout block output structure
     log_block = (
         f"File Name: {new_filename}\n"
         f"Category: {category}\n"
         f"Vendor: {vendor}\n"
+        f"Receipt Date: {receipt_date}\n"
         f"Amount: {total}\n"
         f"Items:\n{formatted_items}"
         f"--------------------------------------------------\n"
