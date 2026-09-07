@@ -4,7 +4,6 @@ import os
 import re
 import json
 from datetime import datetime
-import http.client
 
 # =====================================================================
 # CONFIGURATION
@@ -13,6 +12,13 @@ EMAIL_USER = os.getenv("EMAIL_USER", "your_local_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_local_config_pass")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 IMAP_SERVER = "imap.gmail.com"
+
+# Import the official Google GenAI Library tools
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    pass
 
 def get_current_date_str():
     return datetime.now().strftime("%Y-%m-%d")
@@ -26,7 +32,7 @@ def setup_folders():
     return download_path, processed_path
 
 # =====================================================================
-# INDESTRUCTIBLE EMAIL HARVESTER
+# EMAIL HARVESTER
 # =====================================================================
 def download_new_receipts(download_dir):
     saved_files = []
@@ -86,75 +92,47 @@ def download_new_receipts(download_dir):
     return saved_files
 
 # =====================================================================
-# SYSTEM-FORCED CLOUD VISION ENGINE
+# OFFICIAL GOOGLE GENAI CLOUD VISION ENGINE
 # =====================================================================
-
 def analyze_image_with_gemini(file_path):
-    """
-    Leverages a standardized system call to communicate with Google's API,
-    safely handling raw image formats without formatting failures.
-    """
-    import subprocess
-    import base64
-    
+    """Leverages official Google SDK tunnels to parse structured receipts safely."""
     try:
-        with open(file_path, "rb") as image_file:
-            image_data = base64.b64encode(image_file.read()).decode("utf-8")
-            
-        mime_type = "image/jpeg" if file_path.lower().endswith(('.jpg', '.jpeg')) else "image/png"
+        from PIL import Image
+        img = Image.open(file_path)
+        
+        # Initialize official GenAI client using vault variables
+        client = genai.Client(api_key=GEMINI_API_KEY)
         
         prompt = (
-            "You are a strict bookkeeping bot. Analyze this receipt image and return a raw JSON object with these exact keys:\n"
-            "\"vendor\": The name of the store (e.g. 'The Tool Store')\n"
-            "\"total\": The final grand total dollar amount as a string (e.g. '101.51')\n"
-            "\"category\": Must be exactly 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'\n"
-            "Output only pure JSON data structures. No markdown markers."
+            "Analyze this receipt image and extract data into a strict JSON layout.\n"
+            "Identify the store name as 'vendor'.\n"
+            "Find the final mathematical grand total amount as 'total' (do not include currency symbols).\n"
+            "Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'."
         )
         
-        payload = json.dumps({
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": mime_type, "data": image_data}}
-                ]
-            }],
-            "generationConfig": {
-                "responseMimeType": "application/json"
-            }
-        })
+        # Call official content generation endpoint using explicit JSON configuration schemas
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[img, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "vendor": types.Schema(type=types.Type.STRING),
+                        "total": types.Schema(type=types.Type.STRING),
+                        "category": types.Schema(type=types.Type.STRING),
+                    },
+                    required=["vendor", "total", "category"],
+                ),
+            ),
+        )
         
-        # Save payload to a temporary file to prevent shell parsing bugs
-        temp_payload_path = "temp_payload.json"
-        with open(temp_payload_path, "w", encoding="utf-8") as f:
-            f.write(payload)
-            
-        # Execute standard system curl to guarantee exact header validation paths
-        url = f"https://googleapis.com{GEMINI_API_KEY}"
-        cmd = ["curl", "-s", "-X", "POST", "-H", "Content-Type: application/json", "-d", f"@{temp_payload_path}", url]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = result.stdout
-        
-        # Clean up temporary payload file
-        if os.path.exists(temp_payload_path):
-            os.remove(temp_payload_path)
-            
-        result_json = json.loads(data)
-        
-        # Check if Google returned an explicit API key or access block error message
-        if 'error' in result_json:
-            print(f"Google API Server Error: {result_json['error'].get('message')}")
-            return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
-            
-        text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
-        return json.loads(text_response)
+        return json.loads(response.text.strip())
         
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
-        if os.path.exists("temp_payload.json"):
-            os.remove("temp_payload.json")
         return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
-
 
 # =====================================================================
 # BATCH EXECUTION MAIN PIPELINE
