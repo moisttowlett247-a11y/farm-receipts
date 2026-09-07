@@ -4,6 +4,7 @@ import os
 import re
 import json
 from datetime import datetime
+import time
 
 # =====================================================================
 # CONFIGURATION
@@ -44,10 +45,8 @@ def download_new_receipts(download_dir):
         email_ids = []
         
         if status == 'OK' and data:
-            # Loop handles single or multiple unread email packs cleanly
             for item in data:
                 if isinstance(item, bytes):
-                    # Decodes raw bytes and merges all message tracking IDs into the list
                     email_ids.extend(item.decode('utf-8').split())
         
         for e_id in email_ids:
@@ -55,7 +54,7 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data[0][1] if isinstance(fetch_data, list) else fetch_data
+            raw_email = fetch_data if isinstance(fetch_data, list) else fetch_data
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
@@ -93,52 +92,68 @@ def download_new_receipts(download_dir):
     return saved_files
 
 # =====================================================================
-# SYSTEM-FORCED CLOUD VISION ENGINE WITH PRICE LABELS
+# SYSTEM-FORCED CLOUD VISION ENGINE WITH RETRY FAILSAFE LOGIC
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """Leverages Google's cloud server to pull vendor, amount, category, items, and item prices."""
-    try:
-        from PIL import Image
-        img = Image.open(file_path)
-        
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        
-        prompt = (
-            "Analyze this receipt image and extract data into a strict JSON layout.\n"
-            "1. Identify the store name as 'vendor'.\n"
-            "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
-            "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-            "4. Read the text lines and pull a list of all purchased individual products into 'items'. "
-            "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
-            "and its corresponding item price matching the line layout."
-        )
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=[img, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "vendor": types.Schema(type=types.Type.STRING),
-                        "total": types.Schema(type=types.Type.STRING),
-                        "category": types.Schema(type=types.Type.STRING),
-                        "items": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(type=types.Type.STRING)
-                        ),
-                    },
-                    required=["vendor", "total", "category", "items"],
+    """Leverages Google's cloud server with built-in auto-retry loop for 503 errors."""
+    from PIL import Image
+    
+    # Try up to 3 times if Google's free servers are busy
+    max_retries = 3
+    retry_delay = 3  # Seconds to wait between tries
+    
+    for attempt in range(max_retries):
+        try:
+            img = Image.open(file_path)
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            
+            prompt = (
+                "Analyze this receipt image and extract data into a strict JSON layout.\n"
+                "1. Identify the store name as 'vendor'.\n"
+                "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
+                "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+                "4. Read the text lines and pull a list of all purchased individual products into 'items'. "
+                "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
+                "and its corresponding item price matching the line layout."
+            )
+            
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=[img, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "vendor": types.Schema(type=types.Type.STRING),
+                            "total": types.Schema(type=types.Type.STRING),
+                            "category": types.Schema(type=types.Type.STRING),
+                            "items": types.Schema(
+                                type=types.Type.ARRAY,
+                                items=types.Schema(type=types.Type.STRING)
+                            ),
+                        },
+                        required=["vendor", "total", "category", "items"],
+                    ),
                 ),
-            ),
-        )
-        
-        return json.loads(response.text.strip())
-        
-    except Exception as e:
-        print(f"Cloud analysis error fallback triggered: {e}")
-        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Could not extract item lists"]}
+            )
+            
+            # If successful, parse and return the data immediately
+            return json.loads(response.text.strip())
+            
+        except Exception as e:
+            error_msg = str(e)
+            # If it's a 503 traffic spike error, pause and retry
+            if "503" in error_msg or "UNAVAILABLE" in error_msg:
+                print(f"Google server busy (503). Retrying attempt {attempt + 1}/{max_retries} in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                # If it's a structural or other coding error, fail safely right away
+                print(f"Direct analysis error: {error_msg}")
+                break
+                
+    # Ultimate fallback if all retries hit a wall
+    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike. Please run workflow again."]}
 
 # =====================================================================
 # BATCH EXECUTION MAIN PIPELINE
@@ -156,7 +171,6 @@ def process_receipts(downloaded_files, processed_dir):
             print(f"Offloading cloud analysis for: {filename}...")
             
             data = analyze_image_with_gemini(file_path)
-            
             vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = data.get('category', 'Farm:General')
             total = data.get('total', '[Amount Not Found]')
@@ -165,7 +179,6 @@ def process_receipts(downloaded_files, processed_dir):
             if total and not str(total).startswith('$'):
                 total = f"${total}"
             
-            # Format clean item list with their individual item prices
             formatted_items = ""
             for item in items_list:
                 formatted_items += f"  - {item}\n"
@@ -188,6 +201,9 @@ def process_receipts(downloaded_files, processed_dir):
             log.write(log_block)
             print(f"Completed: {new_filename}")
 
+# =====================================================================
+# MAIN AUTOMATION ENTRY
+# =====================================================================
 if __name__ == "__main__":
     print("Free Farm Receipt Processor System Initialized.")
     download_folder, processed_folder = setup_folders()
