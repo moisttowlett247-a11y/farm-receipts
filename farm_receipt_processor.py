@@ -210,33 +210,20 @@ def determine_subcategory(text):
 
 def extract_basic_amount(text):
     """
-    Advanced box-aware price scanner. Explores lines containing 'Total' words,
-    and falls back to checking the immediate next line if the total is boxed.
+    Safeguard price scanner. Uses absolute maximum value matching to ensure
+    the final grand total is captured even if text boundaries or heavy boxed 
+    shadows confuse line-by-line reading.
     """
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    # Look for any standard decimal price formats like 101.51 or 50.00
+    amounts = re.findall(r'\b\d+\.\d{2}\b', text)
     
-    # Layer 1: Look for total label lines and check them + the line directly below them
-    for idx, line in enumerate(lines):
-        line_lower = line.lower()
-        if any(kw in line_lower for kw in ['order total', 'total', 'amount due', 'balance due', 'net due']):
-            # 1a. Check if the amount is on the exact same line
-            match = re.search(r'\d+[\.,]\d{2}', line)
-            if match:
-                return f"${match.group().replace(',', '.')}"
-            
-            # 1b. BOXED TOTAL LOOKAHEAD: Check the line directly below the word 'Total'
-            if idx + 1 < len(lines):
-                next_line = lines[idx + 1]
-                match_below = re.search(r'\d+[\.,]\d{2}', next_line)
-                if match_below:
-                    return f"${match_below.group().replace(',', '.')}"
-                
-    # Layer 2: Fallback scan across the entire raw text lump for the absolute maximum value
-    all_amounts = re.findall(r'\d+\.\d{2}', text)
-    if all_amounts:
-        float_amounts = [float(a) for a in all_amounts]
-        # Ignore common layout tracking markers like tax or cash change if a true max exists
-        return f"${max(float_amounts):.2f}"
+    if amounts:
+        # Convert all found numbers to floats so we can calculate the true maximum
+        float_amounts = [float(a) for a in amounts]
+        
+        # The grand total is mathematically the largest number on the sheet
+        grand_total = max(float_amounts)
+        return f"${grand_total:.2f}"
         
     return "[Amount Not Found]"
 
