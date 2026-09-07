@@ -54,26 +54,15 @@ def setup_folders():
 # HIGH-SPEED INBOX SWEEPER (IN-MEMORY STREAMS WITH ANTI-SPAM FILTER)
 # =====================================================================
 def download_new_receipts():
-    """Fetches ONLY unread emails from specific trusted senders entirely in memory."""
+    """Fetches all unread emails and matches them against trusted senders instantly in memory."""
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("INBOX")
+        mail.select("INBOX") # Correctly sweeps your active incoming inbox instantly
         
-        # Build the server-side query string natively based on hidden env variables
-        if not TRUSTED_SENDERS:
-            search_query = 'UNSEEN'
-        elif len(TRUSTED_SENDERS) == 1:
-            search_query = f'UNSEEN FROM "{TRUSTED_SENDERS[0]}"'
-        else:
-            search_query = f'FROM "{TRUSTED_SENDERS[0]}"'
-            for sender in TRUSTED_SENDERS[1:]:
-                search_query = f'OR FROM "{sender}" {search_query}'
-            search_query = f'UNSEEN ({search_query})'
-            
-        print(f"Applying secure filter query: {search_query}")
-        status, data = mail.uid('search', None, search_query)
+        # Pull ALL unread message IDs instantly in a clean string format
+        status, data = mail.uid('search', None, 'UNSEEN')
         email_uids = []
         
         if status == 'OK' and data:
@@ -82,6 +71,20 @@ def download_new_receipts():
                     email_uids.extend(item.decode('utf-8').split())
         
         for u_id in email_uids:
+            # Fetch the sender header details first to check authorization
+            status, header_data = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)])')
+            if status != 'OK' or not header_data:
+                continue
+                
+            # Extract the raw sender address string safely
+            header_text = header_data[0][1].decode('utf-8', errors='ignore').lower() if isinstance(header_data[0], tuple) else ""
+            
+            # ANTI-SPAM PROTECTION: Skip the message immediately if it doesn't match your trusted pool
+            if TRUSTED_SENDERS:
+                if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
+                    continue
+            
+            # Confirmed trusted sender -> Fetch message data block safely
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
@@ -128,10 +131,6 @@ def download_new_receipts():
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return saved_in_memory_images
-
-# =====================================================================
-# ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
-# =====================================================================
 # =====================================================================
 # ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
 # =====================================================================
