@@ -62,6 +62,7 @@ def download_new_receipts():
             header_text = ""
             try:
                 for block in header_data:
+                    # FIX: Explicitly target index 1 to pull the sender bytes out of the tuple layout instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         header_text = block[1].decode('utf-8', errors='ignore').lower()
                         break
@@ -79,6 +80,7 @@ def download_new_receipts():
             msg = None
             try:
                 for block in fetch_data:
+                    # FIX: Explicitly target index 1 to parse the raw multi-part email payload bytes instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         msg = email.message_from_bytes(block[1])
                         break
@@ -90,7 +92,7 @@ def download_new_receipts():
             
             has_valid_attachments = False
             
-            # FIX: If the root email itself is a raw image with no text components
+            # Reads pure textless emails that only contain an image attachment
             root_content_type = msg.get_content_type().lower()
             if root_content_type in ['image/jpeg', 'image/png', 'image/jpg']:
                 from PIL import Image
@@ -136,6 +138,7 @@ def download_new_receipts():
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return saved_in_memory_images
+
 
 # =====================================================================
 # THREAD-ISOLATED CLOUD VISION ENGINE (ZERO GLOBAL VARIABLES)
