@@ -8,12 +8,11 @@ from datetime import datetime
 # =====================================================================
 # CONFIGURATION
 # =====================================================================
-EMAIL_USER = os.getenv("EMAIL_USER", "your_local_email@gmail.com")
-EMAIL_PASS = os.getenv("EMAIL_PASS", "your_local_config_pass")
+EMAIL_USER = os.getenv("EMAIL_USER", "your_email@gmail.com")
+EMAIL_PASS = os.getenv("EMAIL_PASS", "your_app_password")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 IMAP_SERVER = "imap.gmail.com"
 
-# Import the official Google GenAI Library tools
 try:
     from google import genai
     from google.genai import types
@@ -45,7 +44,7 @@ def download_new_receipts(download_dir):
         email_ids = []
         
         if status == 'OK' and data and isinstance(data, list):
-            raw_data = data[0]
+            raw_data = data
             if isinstance(raw_data, bytes):
                 email_ids = raw_data.decode('utf-8').split()
         
@@ -54,7 +53,7 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data[0][1]
+            raw_email = fetch_data
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
@@ -92,25 +91,26 @@ def download_new_receipts(download_dir):
     return saved_files
 
 # =====================================================================
-# OFFICIAL GOOGLE GENAI CLOUD VISION ENGINE
+# SYSTEM-FORCED CLOUD VISION ENGINE WITH PRICE LABELS
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """Leverages official Google SDK tunnels to parse structured receipts safely."""
+    """Leverages Google's cloud server to pull vendor, amount, category, items, and item prices."""
     try:
         from PIL import Image
         img = Image.open(file_path)
         
-        # Initialize official GenAI client using vault variables
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         prompt = (
             "Analyze this receipt image and extract data into a strict JSON layout.\n"
-            "Identify the store name as 'vendor'.\n"
-            "Find the final mathematical grand total amount as 'total' (do not include currency symbols).\n"
-            "Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'."
+            "1. Identify the store name as 'vendor'.\n"
+            "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
+            "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+            "4. Read the text lines and pull a list of all purchased individual products into 'items'. "
+            "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
+            "and its corresponding item price matching the line layout."
         )
         
-        # Call official content generation endpoint using explicit JSON configuration schemas
         response = client.models.generate_content(
             model='gemini-3.6-flash',
             contents=[img, prompt],
@@ -122,8 +122,12 @@ def analyze_image_with_gemini(file_path):
                         "vendor": types.Schema(type=types.Type.STRING),
                         "total": types.Schema(type=types.Type.STRING),
                         "category": types.Schema(type=types.Type.STRING),
+                        "items": types.Schema(
+                            type=types.Type.ARRAY,
+                            items=types.Schema(type=types.Type.STRING)
+                        ),
                     },
-                    required=["vendor", "total", "category"],
+                    required=["vendor", "total", "category", "items"],
                 ),
             ),
         )
@@ -132,7 +136,7 @@ def analyze_image_with_gemini(file_path):
         
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
-        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
+        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Could not extract item lists"]}
 
 # =====================================================================
 # BATCH EXECUTION MAIN PIPELINE
@@ -154,9 +158,17 @@ def process_receipts(downloaded_files, processed_dir):
             vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = data.get('category', 'Farm:General')
             total = data.get('total', '[Amount Not Found]')
+            items_list = data.get('items', [])
             
             if total and not str(total).startswith('$'):
                 total = f"${total}"
+            
+            # Format clean item list with their individual item prices
+            formatted_items = ""
+            for item in items_list:
+                formatted_items += f"  - {item}\n"
+            if not formatted_items:
+                formatted_items = "  - [No Items Found]\n"
             
             new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
             final_processed_path = os.path.join(processed_dir, new_filename)
@@ -168,6 +180,7 @@ def process_receipts(downloaded_files, processed_dir):
                 f"Category:  {category}\n"
                 f"Vendor:    {vendor}\n"
                 f"Amount:    {total}\n"
+                f"Items:\n{formatted_items}"
                 f"--------------------------------------------------\n"
             )
             log.write(log_block)
