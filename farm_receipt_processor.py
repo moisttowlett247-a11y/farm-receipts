@@ -63,11 +63,10 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not structure_data:
                 continue
             
-                raw_struct = str(structure_data).lower()
-            # FIX: Detect images OR multipart wrappers containing multiple file attachments
-            if not any(x in raw_struct for x in ['image/png', 'image/jpeg', 'image/jpg', 'multipart/mixed', 'multipart/related']):
+                            # Check structural layers directly to avoid scope assignment traps
+            valid_types = ['image/png', 'image/jpeg', 'image/jpg', 'multipart/mixed', 'multipart/related']
+            if not any(x in str(structure_data).lower() for x in valid_types):
                 continue
-
                 
             # Pull only when confirmed to contain images to eliminate text/newsletter bloat
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
