@@ -50,15 +50,16 @@ def setup_folders():
 # =====================================================================
 def split_multiple_receipts(image_path, download_dir):
     """
-    Scans a single photo for multiple receipts. If found, crops them 
-    out and saves them separately to prevent mixed OCR text.
+    Smarter receipt handler. Uses an incredibly high area threshold 
+    so shadows and long layouts do not accidentally rip a single receipt apart.
     """
     image = cv2.imread(image_path)
     if image is None:
         return [image_path]
         
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Increased blurring to smooth out harsh phone shadows
+    blurred = cv2.GaussianBlur(gray, (11, 11), 0)
     _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -68,12 +69,12 @@ def split_multiple_receipts(image_path, download_dir):
     base_name = os.path.basename(image_path)
     
     for contour in contours:
-        # Filter out small background noises; look for paper-sized shapes
-        if cv2.contourArea(contour) > 60000:  
+        # MASSIVELY increased from 60,000 to 350,000. 
+        # This guarantees a single long receipt with shadows stays completely glued together.
+        if cv2.contourArea(contour) > 350000:  
             x, y, w, h = cv2.boundingRect(contour)
             
-            # Avoid cropping tiny strips or edges
-            if w > 100 and h > 100:
+            if w > 150 and h > 150:
                 cropped_img = image[y:y+h, x:x+w]
                 cropped_filename = f"split_{receipt_count}_{base_name}"
                 cropped_path = os.path.join(download_dir, cropped_filename)
@@ -82,13 +83,15 @@ def split_multiple_receipts(image_path, download_dir):
                 cropped_files.append(cropped_path)
                 receipt_count += 1
                 
-    # If the system detected multiple distinct items, clean up the original multi-shot
-    if len(cropped_files) > 1:
-        try:
-            os.remove(image_path)
-        except OSError:
-            pass
-        return cropped_files
+    # If it didn't find multiple distinct giant layouts, keep the original image intact
+    if len(cropped_files) <= 1:
+        return [image_path]
+        
+    try:
+        os.remove(image_path)
+    except OSError:
+        pass
+    return cropped_files
         
     # Default back to single image tracking if auto-crop wasn't triggered
     return [image_path]
@@ -206,11 +209,24 @@ def determine_subcategory(text):
     return "Farm:General"
 
 def extract_basic_amount(text):
-    """Finds formatted prices to pull out estimated totals."""
-    amounts = re.findall(r'\b\d+\.\d{2}\b', text)
-    if amounts:
-        float_amounts = [float(a) for a in amounts]
+    """Bulletproof price scanner optimized for large boxed totals and multi-line structures."""
+    lines = text.split('\n')
+    
+    # Layer 1: Check lines that explicitly say total indicators
+    for line in lines:
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in ['order total', 'total', 'amount due', 'balance', 'subtotal']):
+            # This expression safely pulls the price even if surrounded by box border remnants
+            match = re.search(r'\d+[\.,]\d{2}', line)
+            if match:
+                return f"${match.group().replace(',', '.')}"
+                
+    # Layer 2: Fallback scan across the entire raw text lump
+    all_amounts = re.findall(r'\d+\.\d{2}', text)
+    if all_amounts:
+        float_amounts = [float(a) for a in all_amounts]
         return f"${max(float_amounts):.2f}"
+        
     return "[Amount Not Found]"
 
 # =====================================================================
