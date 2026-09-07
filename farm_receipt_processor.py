@@ -62,7 +62,6 @@ def download_new_receipts():
             header_text = ""
             try:
                 for block in header_data:
-                    # FIX: Explicitly target block[1] to decode content bytes out of the tuple pair instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         header_text = block[1].decode('utf-8', errors='ignore').lower()
                         break
@@ -80,7 +79,6 @@ def download_new_receipts():
             msg = None
             try:
                 for block in fetch_data:
-                    # FIX: Explicitly target block[1] to parse the raw multi-part payload bytes immediately
                     if isinstance(block, tuple) and len(block) > 1:
                         msg = email.message_from_bytes(block[1])
                         break
@@ -91,22 +89,38 @@ def download_new_receipts():
                 continue
             
             has_valid_attachments = False
-            for part in msg.walk():
-                if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-                    continue
-                    
-                filename = part.get_filename()
-                if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    from PIL import Image
-                    import io
-                    image_bytes = part.get_payload(decode=True)
-                    pil_image = Image.open(io.BytesIO(image_bytes))
-                    
-                    saved_in_memory_images.append({
-                        "image_object": pil_image,
-                        "original_name": filename
-                    })
-                    has_valid_attachments = True
+            
+            # FIX: If the root email itself is a raw image with no text components
+            root_content_type = msg.get_content_type().lower()
+            if root_content_type in ['image/jpeg', 'image/png', 'image/jpg']:
+                from PIL import Image
+                import io
+                image_bytes = msg.get_payload(decode=True)
+                pil_image = Image.open(io.BytesIO(image_bytes))
+                
+                saved_in_memory_images.append({
+                    "image_object": pil_image,
+                    "original_name": f"direct_upload_{u_id}.jpg"
+                })
+                has_valid_attachments = True
+            else:
+                # Standard nested multi-file lookup safety layer
+                for part in msg.walk():
+                    if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
+                        continue
+                        
+                    filename = part.get_filename()
+                    if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        from PIL import Image
+                        import io
+                        image_bytes = part.get_payload(decode=True)
+                        pil_image = Image.open(io.BytesIO(image_bytes))
+                        
+                        saved_in_memory_images.append({
+                            "image_object": pil_image,
+                            "original_name": filename
+                        })
+                        has_valid_attachments = True
             
             if has_valid_attachments:
                 mail.uid('store', u_id, '+FLAGS', '\\Seen')
