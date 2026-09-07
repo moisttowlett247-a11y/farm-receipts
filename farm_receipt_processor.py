@@ -54,7 +54,7 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data if isinstance(fetch_data, list) else fetch_data
+            raw_email = fetch_data[0][1] if isinstance(fetch_data, list) and len(fetch_data) > 0 else fetch_data
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
