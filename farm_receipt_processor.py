@@ -5,6 +5,7 @@ import re
 import json
 from datetime import datetime
 import time
+import concurrent.futures
 
 # =====================================================================
 # CONFIGURATION
@@ -19,6 +20,12 @@ try:
     from google.genai import types
 except ImportError:
     pass
+
+# Initialize client globally once to eliminate connection overhead inside threads
+try:
+    client = genai.Client(api_key=GEMINI_API_KEY)
+except Exception:
+    client = None
 
 def get_current_date_str():
     return datetime.now().strftime("%Y-%m-%d")
@@ -104,7 +111,6 @@ def analyze_image_with_gemini(file_path):
     for attempt in range(max_retries):
         try:
             img = Image.open(file_path)
-            client = genai.Client(api_key=GEMINI_API_KEY)
             
             prompt = (
                 "Analyze this receipt image and extract data into a strict JSON layout.\n"
@@ -151,50 +157,76 @@ def analyze_image_with_gemini(file_path):
     return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike. Please run workflow again."]}
 
 # =====================================================================
-# BATCH EXECUTION MAIN PIPELINE
+# PARALLEL WORKER ENGINE
+# =====================================================================
+def process_single_file(file_path, processed_dir):
+    """Processes a single receipt completely independent of other files."""
+    filename = os.path.basename(file_path)
+    print(f"Offloading cloud analysis for: {filename}...")
+    
+    data = analyze_image_with_gemini(file_path)
+    
+    vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
+    category = data.get('category', 'Farm:General')
+    total = data.get('total', '[Amount Not Found]')
+    items_list = data.get('items', [])
+    
+    if total and not str(total).startswith('\$'):
+        total = f"\${total}"
+    
+    formatted_items = ""
+    for item in items_list:
+        formatted_items += f"  - {item}\n"
+    if not formatted_items:
+        formatted_items = "  - [No Items Found]\n"
+    
+    new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
+    final_processed_path = os.path.join(processed_dir, new_filename)
+    
+    try:
+        os.rename(file_path, final_processed_path)
+    except Exception as e:
+        print(f"File system conflict on rename for {filename}: {e}")
+    
+    # Return string segment back to pool manager for safe writing
+    log_block = (
+        f"File Name: {new_filename}\n"
+        f"Category: {category}\n"
+        f"Vendor: {vendor}\n"
+        f"Amount: {total}\n"
+        f"Items:\n{formatted_items}"
+        f"--------------------------------------------------\n"
+    )
+    return log_block
+
+# =====================================================================
+# BATCH EXECUTION MAIN PIPELINE (HIGH RE-ENGINEERED PERFORMANCE)
 # =====================================================================
 def process_receipts(downloaded_files, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     
+    # Run API calls concurrently to strip execution down to network limits
+    # Max workers balances rate limits while executing 5-10 payloads instantly
+    log_blocks_gathered = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(process_single_file, fp, processed_dir): fp for fp in downloaded_files}
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result_block = future.result()
+                log_blocks_gathered.append(result_block)
+            except Exception as e:
+                orig_file = futures[future]
+            print(f"Thread worker critical exception on file {os.path.basename(orig_file)}: {e}")
+
+    # Open ledger exactly once to eliminate lock starvation and speed up I/O
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"==================================================\n")
+        log.writelines(log_blocks_gathered)
         
-        for file_path in downloaded_files:
-            filename = os.path.basename(file_path)
-            print(f"Offloading cloud analysis for: {filename}...")
-            
-            data = analyze_image_with_gemini(file_path)
-            
-            vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
-            category = data.get('category', 'Farm:General')
-            total = data.get('total', '[Amount Not Found]')
-            items_list = data.get('items', [])
-            
-            if total and not str(total).startswith('$'):
-                total = f"${total}"
-            
-            formatted_items = ""
-            for item in items_list:
-                formatted_items += f"  - {item}\n"
-            if not formatted_items:
-                formatted_items = "  - [No Items Found]\n"
-            
-            new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
-            final_processed_path = os.path.join(processed_dir, new_filename)
-            os.rename(file_path, final_processed_path)
-            
-            log_block = (
-                f"File Name: {new_filename}\n"
-                f"Category:  {category}\n"
-                f"Vendor:    {vendor}\n"
-                f"Amount:    {total}\n"
-                f"Items:\n{formatted_items}"
-                f"--------------------------------------------------\n"
-            )
-            log.write(log_block)
-            print(f"Completed: {new_filename}")
+    print(f"Successfully processed batch of {len(downloaded_files)} receipts.")
 
 # =====================================================================
 # MAIN AUTOMATION ENTRY
@@ -203,7 +235,6 @@ if __name__ == "__main__":
     print("Free Farm Receipt Processor System Initialized.")
     download_folder, processed_folder = setup_folders()
     new_paths = download_new_receipts(download_folder)
-    
     if new_paths:
         process_receipts(new_paths, processed_folder)
     else:
