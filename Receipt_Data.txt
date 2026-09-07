@@ -59,3 +59,23 @@ Amount: $[Amount Not Found]
 Items:
   - Extraction warning: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-07 23:41:23
+==================================================
+File Name: Farm-General__Unknown_Vendor___1000002240.jpg
+Category: Farm:General
+Vendor: Unknown_Vendor
+Receipt Date: [Date Not Found]
+Amount: $[Amount Not Found]
+Items:
+  - Extraction warning: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+--------------------------------------------------
+File Name: Farm-General__S_&_S_Home_Center___1000002267.jpg
+Category: Farm:General
+Vendor: S & S Home Center
+Receipt Date: 2026-07-21
+Amount: $716.61
+Items:
+  - AIR CONDITIONER GE 18,000 W/HEAT DD061942Z 649.99
+--------------------------------------------------
