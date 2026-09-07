@@ -8,7 +8,7 @@ import time
 import concurrent.futures
 
 # =====================================================================
-# CONFIGURATION & KEY/SENDER POOL MANAGER
+# CONFIGURATION & KEY MANAGER
 # =====================================================================
 EMAIL_USER = os.getenv("EMAIL_USER", "your_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_app_password")
@@ -20,7 +20,6 @@ try:
 except ImportError:
     pass
 
-# Thread-Safe Key Mapping Pool
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -28,7 +27,6 @@ GEMINI_KEYS = [
 ]
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
-# Dynamic Trusted Senders List Setup
 TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
 TRUSTED_SENDERS = [email.strip() for email in TRUSTED_SENDERS_RAW.split(",") if email.strip()]
 
@@ -36,10 +34,10 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# HIGH-SPEED INBOX SWEEPER (BULK BYTE PAYLOAD EXTRACTION)
+# HIGH-SPEED INBOX SWEEPER
 # =====================================================================
 def download_new_receipts():
-    """Fetches all unread emails and matches them against trusted senders instantly in memory."""
+    """Fetches unread emails from your trusted list in memory."""
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -62,16 +60,14 @@ def download_new_receipts():
             header_text = ""
             try:
                 for block in header_data:
-                    # FIX: Explicitly target index 1 to pull the sender bytes out of the tuple layout instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         header_text = block[1].decode('utf-8', errors='ignore').lower()
                         break
             except Exception:
                 header_text = ""
             
-            if TRUSTED_SENDERS:
-                if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
-                    continue
+            if TRUSTED_SENDERS and not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
+                continue
             
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
@@ -80,7 +76,6 @@ def download_new_receipts():
             msg = None
             try:
                 for block in fetch_data:
-                    # FIX: Explicitly target index 1 to parse the raw multi-part email payload bytes instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         msg = email.message_from_bytes(block[1])
                         break
@@ -91,22 +86,20 @@ def download_new_receipts():
                 continue
             
             has_valid_attachments = False
+            attachments_in_msg = []
             
-            # Reads pure textless emails that only contain an image attachment
             root_content_type = msg.get_content_type().lower()
             if root_content_type in ['image/jpeg', 'image/png', 'image/jpg']:
                 from PIL import Image
                 import io
                 image_bytes = msg.get_payload(decode=True)
                 pil_image = Image.open(io.BytesIO(image_bytes))
-                
-                saved_in_memory_images.append({
+                attachments_in_msg.append({
                     "image_object": pil_image,
                     "original_name": f"direct_upload_{u_id}.jpg"
                 })
                 has_valid_attachments = True
             else:
-                # Standard nested multi-file lookup safety layer
                 for part in msg.walk():
                     if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
                         continue
@@ -117,36 +110,31 @@ def download_new_receipts():
                         import io
                         image_bytes = part.get_payload(decode=True)
                         pil_image = Image.open(io.BytesIO(image_bytes))
-                        
-                        saved_in_memory_images.append({
+                        attachments_in_msg.append({
                             "image_object": pil_image,
                             "original_name": filename
                         })
                         has_valid_attachments = True
             
             if has_valid_attachments:
-                mail.uid('store', u_id, '+FLAGS', '\\Seen')
-                try:
-                    mail.create("Processed_Receipts")
-                    mail.uid('copy', u_id, "Processed_Receipts")
-                    mail.uid('store', u_id, '+FLAGS', '\\Deleted')
-                except:
-                    pass
-                    
-        mail.expunge()
-        mail.logout()
+                saved_in_memory_images.append({
+                    "u_id": u_id,
+                    "attachments": attachments_in_msg
+                })
+                
+        if saved_in_memory_images:
+            return mail, saved_in_memory_images
+        else:
+            mail.logout()
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
-    return saved_in_memory_images
-
+    return None, []
 
 # =====================================================================
-# THREAD-ISOLATED CLOUD VISION ENGINE (ZERO GLOBAL VARIABLES)
+# THREAD-ISOLATED VISION ENGINE (NO RE-TRY DELAY HANGS)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key):
-    """Uses a completely isolated API key assigned explicitly to this worker thread."""
     local_client = genai.Client(api_key=assigned_key)
-    
     try:
         prompt = (
             "Analyze this receipt image and extract data into a strict JSON layout.\n"
@@ -154,11 +142,8 @@ def analyze_image_with_gemini(img_obj, assigned_key):
             "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
             "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
             "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
-            "5. Read the text lines and pull a list of all purchased individual products into 'items'. "
-            "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
-            "and its corresponding item price matching the line layout."
+            "5. Read the text lines and pull a list of all purchased individual products into 'items'."
         )
-        
         response = local_client.models.generate_content(
             model='gemini-3.6-flash',
             contents=[img_obj, prompt],
@@ -172,106 +157,130 @@ def analyze_image_with_gemini(img_obj, assigned_key):
                         "total": types.Schema(type=types.Type.STRING),
                         "category": types.Schema(type=types.Type.STRING),
                         "date": types.Schema(type=types.Type.STRING),
-                        "items": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(type=types.Type.STRING)
-                        ),
+                        "items": types.Schema(type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING)),
                     },
                     required=["vendor", "total", "category", "date", "items"],
                 ),
             ),
         )
         return json.loads(response.text.strip())
-        
     except Exception as e:
-        print(f"Cloud analysis network warning/error: {e}")
-        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "date": "[Date Not Found]", "items": [f"Extraction warning: {str(e)}"]}
+        print(f"Cloud server drop (Skipping write layout block): {e}")
+        return None
 
 # =====================================================================
-# THREAD WORKER ROUTER
+# INDEPENDENT WORKER SCOPE ROUTER
 # =====================================================================
-def process_single_memory_receipt(args):
-    """Unpacks thread variables cleanly inside isolated scope execution layers."""
-    receipt_data, assigned_key = args
-    img_obj = receipt_data["image_object"]
-    filename = receipt_data["original_name"]
+def process_single_email_group(args):
+    email_package, assigned_key = args
+    attachments = email_package["attachments"]
+    u_id = email_package["u_id"]
     
-    print(f"Offloading cloud analysis for in-memory image stream: {filename}...")
-    data = analyze_image_with_gemini(img_obj, assigned_key)
+    gathered_log_blocks = []
     
-    vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
-    category = data.get('category', 'Farm:General')
-    total = data.get('total', '[Amount Not Found]')
-    receipt_date = data.get('date', '[Date Not Found]')
-    items_list = data.get('items', [])
-    
-    if total and not str(total).startswith('$'):
-        total = f"${total}"
-    
-    formatted_items = ""
-    for item in items_list:
-        formatted_items += f"  - {item}\n"
-    if not formatted_items:
-        formatted_items = "  - [No Items Found]\n"
-    
-    new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
-    
-    log_block = (
-        f"File Name: {new_filename}\n"
-        f"Category: {category}\n"
-        f"Vendor: {vendor}\n"
-        f"Receipt Date: {receipt_date}\n"
-        f"Amount: {total}\n"
-        f"Items:\n{formatted_items}"
-        f"--------------------------------------------------\n"
-    )
-    
-    img_obj.close()
-    return log_block
-
-# =====================================================================
-# BATCH EXECUTION MAIN PIPELINE (THREAD-SAFE ENTRY LAYER)
-# =====================================================================
-def process_receipts(receipt_memory_list, processed_dir):
-    log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
-    log_blocks_gathered = []
-    
-    # Map each incoming receipt to an isolated API key from the pool safely
-    worker_inputs = []
-    for idx, receipt in enumerate(receipt_memory_list):
-        assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
-        worker_inputs.append((receipt, assigned_key))
+    for attachment in attachments:
+        img_obj = attachment["image_object"]
+        filename = attachment["original_name"]
         
-    # Workers scale dynamically based on the exact batch size safely
-    pool_workers = min(len(receipt_memory_list), 3)
+        print(f"Offloading cloud analysis for: {filename}...")
+        data = analyze_image_with_gemini(img_obj, assigned_key)
+        img_obj.close()
+        
+        if data is None:
+            return {"u_id": u_id, "success": False, "blocks": []}
+            
+        vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
+        category = data.get('category', 'Farm:General')
+        total = data.get('total', '[Amount Not Found]')
+        receipt_date = data.get('date', '[Date Not Found]')
+        items_list = data.get('items', [])
+        
+        if total and not str(total).startswith('$'):
+            total = f"${total}"
+        
+        formatted_items = "".join([f"  - {item}\n" for item in items_list]) if items_list else "  - [No Items Found]\n"
+        new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
+        
+        log_entry = (
+            f"File Name: {new_filename}\n"
+            f"Category: {category}\n"
+            f"Vendor: {vendor}\n"
+            f"Receipt Date: {receipt_date}\n"
+            f"Amount: {total}\n"
+            f"Items:\n{formatted_items}"
+            f"--------------------------------------------------\n"
+        )
+        gathered_log_blocks.append(log_entry)
+        
+    return {"u_id": u_id, "success": True, "blocks": gathered_log_blocks}
+
+# =====================================================================
+# PIPELINE COORDINATOR (WITH CHRONOLOGICAL DATE SORTING)
+# =====================================================================
+def process_receipts(mail_session, email_packages, processed_dir):
+    log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
+    extracted_records = []
+    
+    worker_inputs = []
+    for idx, package in enumerate(email_packages):
+        assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
+        worker_inputs.append((package, assigned_key))
+        
+    pool_workers = min(len(email_packages), 3)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
-        futures = {executor.submit(process_single_memory_receipt, w_in): w_in for w_in in worker_inputs}
+        futures = {executor.submit(process_single_email_group, w_in): w_in for w_in in worker_inputs}
         
         for future in concurrent.futures.as_completed(futures):
             try:
-                result_block = future.result()
-                log_blocks_gathered.append(result_block)
+                result = future.result()
+                u_id = result["u_id"]
+                
+                if result["success"]:
+                    extracted_records.extend(result["blocks"])
+                    mail_session.uid('store', u_id, '+FLAGS', '\\Seen')
+                    try:
+                        mail_session.create("Processed_Receipts")
+                        mail_session.uid('copy', u_id, "Processed_Receipts")
+                        mail_session.uid('store', u_id, '+FLAGS', '\\Deleted')
+                    except:
+                        pass
+                else:
+                    print(f"⚠️ 503 Server Error caught on UID {u_id}. Keeping email UNREAD for next safety run.")
             except Exception as e:
-                failed_input = futures[future]
-                print(f"Thread worker exception on file {failed_input[0]['original_name']}: {e}")
+                print(f"Thread processor critical error: {e}")
 
-    with open(log_file_path, "a", encoding="utf-8") as log:
-        log.write(f"\n==================================================\n")
-        log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        log.write(f"==================================================\n")
-        log.writelines(log_blocks_gathered)
+    if extracted_records:
+        def get_sorting_date(log_text):
+            match = re.search(r"Receipt Date:\s*([\d-:\s\w\[\]:]+)", log_text)
+            if match:
+                date_str = match.group(1).strip()
+                if re.match(r"^\d{4}-\d{2}-\d{2}", date_str):
+                    return date_str
+            return "9999-99-99"
+
+        extracted_records.sort(key=get_sorting_date)
+
+        with open(log_file_path, "a", encoding="utf-8") as log:
+            log.write(f"\n==================================================\n")
+            log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            log.write(f"==================================================\n")
+            log.writelines(extracted_records)
+            
+        print(f"Successfully sorted and processed {len(extracted_records)} records chronologically to your ledger.")
         
-    print(f"Successfully processed batch of {len(receipt_memory_list)} receipts in-memory.")
+    mail_session.expunge()
+    mail_session.logout()
 
 # =====================================================================
-# MAIN AUTOMATION ENTRY
+# MAIN ENTRY
 # =====================================================================
 if __name__ == "__main__":
     print("Free Farm Receipt Processor System Initialized.")
     processed_folder = setup_folders()
-    receipt_queue = download_new_receipts()
-    if receipt_queue:
-        process_receipts(receipt_queue, processed_folder)
+    mail_session, email_queue = download_new_receipts()
+    if email_queue:
+        process_receipts(mail_session, email_queue, processed_folder)
     else:
-        print("Inbox check clear. No unread receipt attachments detected matching filter specifications.")
+        print("Inbox check clear. No unread receipts found matching filter rules.")
+
