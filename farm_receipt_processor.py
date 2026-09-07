@@ -150,7 +150,7 @@ def analyze_image_with_gemini(img_obj):
                 "and its corresponding item price matching the line layout."
             )
             
-            response = local_client.models.generate_content(
+                response = local_client.models.generate_content(
                 model='gemini-3.6-flash',
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
