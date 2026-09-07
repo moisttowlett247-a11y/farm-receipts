@@ -88,18 +88,23 @@ def download_new_receipts(download_dir):
 # =====================================================================
 # SYSTEM-FORCED CLOUD VISION ENGINE
 # =====================================================================
+
 def analyze_image_with_gemini(file_path):
-    """Leverages Google's cloud server with strict dictionary nesting extracts."""
+    """
+    Leverages a standardized system call to communicate with Google's API,
+    safely handling raw image formats without formatting failures.
+    """
+    import subprocess
+    import base64
+    
     try:
         with open(file_path, "rb") as image_file:
-            import base64
             image_data = base64.b64encode(image_file.read()).decode("utf-8")
             
         mime_type = "image/jpeg" if file_path.lower().endswith(('.jpg', '.jpeg')) else "image/png"
         
         prompt = (
-            "You are a strict data extraction bot. Analyze this receipt image.\n"
-            "Return a raw JSON object with these exact keys:\n"
+            "You are a strict bookkeeping bot. Analyze this receipt image and return a raw JSON object with these exact keys:\n"
             "\"vendor\": The name of the store (e.g. 'The Tool Store')\n"
             "\"total\": The final grand total dollar amount as a string (e.g. '101.51')\n"
             "\"category\": Must be exactly 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'\n"
@@ -118,22 +123,38 @@ def analyze_image_with_gemini(file_path):
             }
         })
         
-        conn = http.client.HTTPSConnection("generativelanguage.googleapis.com")
-        headers = {'Content-Type': 'application/json'}
-        conn.request("POST", f"/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}", payload, headers)
+        # Save payload to a temporary file to prevent shell parsing bugs
+        temp_payload_path = "temp_payload.json"
+        with open(temp_payload_path, "w", encoding="utf-8") as f:
+            f.write(payload)
+            
+        # Execute standard system curl to guarantee exact header validation paths
+        url = f"https://googleapis.com{GEMINI_API_KEY}"
+        cmd = ["curl", "-s", "-X", "POST", "-H", "Content-Type: application/json", "-d", f"@{temp_payload_path}", url]
         
-        response = conn.getresponse()
-        data = response.read().decode("utf-8")
-        conn.close()
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = result.stdout
         
-        # Navigate through the structural JSON response dictionary arrays
+        # Clean up temporary payload file
+        if os.path.exists(temp_payload_path):
+            os.remove(temp_payload_path)
+            
         result_json = json.loads(data)
+        
+        # Check if Google returned an explicit API key or access block error message
+        if 'error' in result_json:
+            print(f"Google API Server Error: {result_json['error'].get('message')}")
+            return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
+            
         text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
         return json.loads(text_response)
         
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
+        if os.path.exists("temp_payload.json"):
+            os.remove("temp_payload.json")
         return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
+
 
 # =====================================================================
 # BATCH EXECUTION MAIN PIPELINE
