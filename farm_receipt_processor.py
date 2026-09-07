@@ -211,13 +211,14 @@ def process_receipts(downloaded_files, processed_dir):
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(process_single_file, fp, processed_dir): fp for fp in downloaded_files}
         
-        for future in concurrent.futures.as_completed(futures):
+                for future in concurrent.futures.as_completed(futures):
             try:
                 result_block = future.result()
                 log_blocks_gathered.append(result_block)
             except Exception as e:
-                orig_file = futures[future]
-            print(f"Thread worker critical exception on file {os.path.basename(orig_file)}: {e}")
+                # This fetches the exact file path tied to this specific failing thread job
+                failed_file_path = futures[future]
+                print(f"Thread worker critical exception on file {os.path.basename(failed_file_path)}: {e}")
 
     # Open ledger exactly once to eliminate lock starvation and speed up I/O
     with open(log_file_path, "a", encoding="utf-8") as log:
