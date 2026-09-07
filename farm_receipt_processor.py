@@ -112,7 +112,7 @@ def download_new_receipts(download_dir):
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-                status, data = mail.search(None, '(UNSEEN)')
+        status, data = mail.search(None, '(UNSEEN)')
         email_ids = []
         if status == 'OK' and data:
             # Safely extract indices whether they arrive inside a list or a raw byte string
