@@ -59,7 +59,7 @@ def download_new_receipts():
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select('"[Gmail]/All Mail"')
+        mail.select("INBOX")
         
         # Build the server-side query string natively based on hidden env variables
         if not TRUSTED_SENDERS:
