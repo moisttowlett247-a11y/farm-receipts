@@ -136,12 +136,27 @@ def download_new_receipts():
 # ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
 # =====================================================================
 def analyze_image_with_gemini(img_obj):
-    """Leverages Google's cloud server with instant API key rotation for 429 errors."""
+    """Creates a thread-isolated connection session to completely bypass internal SDK queue bottlenecks."""
     max_retries = len(GEMINI_KEYS) * 2
-    local_client = get_next_client()
+    
+    # OPTIMIZATION: Pull a fresh key from the rotation pool instantly for this specific thread
+    global current_key_index
+    if not GEMINI_KEYS:
+        raise ValueError("Critical Error: No valid Gemini API keys found inside environmental configurations.")
+    
+    selected_key = GEMINI_KEYS[current_key_index]
+    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
+    
+    # Initialize a completely independent thread-local client context session
+    local_client = genai.Client(api_key=selected_key)
+    print(f"🚀 Thread spawned clean network connection using API Key Slot #{current_key_index + 1}")
+    
+    temperatures = [0.0, 0.3, 0.7, 1.0, 1.0, 1.0]
     
     for attempt in range(max_retries):
         try:
+            current_temp = temperatures[attempt] if attempt < len(temperatures) else 1.0
+            
             prompt = (
                 "Analyze this receipt image and extract data into a strict JSON layout.\n"
                 "1. Identify the store name as 'vendor'.\n"
@@ -158,6 +173,7 @@ def analyze_image_with_gemini(img_obj):
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
+                    temperature=current_temp,
                     response_schema=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
@@ -175,17 +191,27 @@ def analyze_image_with_gemini(img_obj):
                 ),
             )
             
-            return json.loads(response.text.strip())
+            extracted_json = json.loads(response.text.strip())
+            
+            if extracted_json.get("date") in ["[Date Not Found]", "", "None", "Unknown"]:
+                if attempt < max_retries - 1:
+                    raise ValueError("Target field missing in visual extraction output payload.")
+            
+            return extracted_json
             
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                print(f"⚠️ Key slot rate limited. Discarding session and swapping to clean backup channel...")
-                local_client = get_next_client()
+                # Key rotation failsafe: Grab a fresh key instantly and spawn a brand new client context
+                selected_key = GEMINI_KEYS[current_key_index]
+                current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
+                print(f"⚠️ Worker rate-limited. Instantly switching thread session to API Key Slot #{current_key_index + 1}")
+                local_client = genai.Client(api_key=selected_key)
             elif "503" in error_msg or "UNAVAILABLE" in error_msg:
-                print(f"Google server busy (503). Standard cooling retry attempt {attempt + 1}/{max_retries}...")
-                time.sleep(3)
+                time.sleep(2)
             else:
+                if "Target field missing" in error_msg and attempt < max_retries - 1:
+                    continue
                 print(f"Direct analysis error: {error_msg}")
                 break
                 
