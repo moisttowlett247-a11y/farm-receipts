@@ -48,10 +48,8 @@ def get_current_date_str():
     return datetime.now().strftime("%Y-%m-%d")
 
 def setup_folders():
-    today = get_current_date_str()
-    processed_path = os.path.join("./Receipts_Processed", today)
-    os.makedirs(processed_path, exist_ok=True)
-    return processed_path
+    # Keep it simple: Returns current root directory to keep GitHub saves error-free
+    return "."
 
 # =====================================================================
 # BULK EMAIL INBOX SWEEPER (IN-MEMORY STREAMS)
@@ -219,10 +217,11 @@ def process_single_memory_receipt(receipt_data):
 # BATCH EXECUTION MAIN PIPELINE (CONCURRENT BALANCER)
 # =====================================================================
 def process_receipts(receipt_memory_list, processed_dir):
+    # Writes directly to a unified main ledger file in your root folder
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     log_blocks_gathered = []
     
-    # max_workers matches our key pool layout for absolute concurrent delivery
+    # max_workers=3 matches our rotating key pool layout for concurrent delivery
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(process_single_memory_receipt, rec): rec for rec in receipt_memory_list}
         
