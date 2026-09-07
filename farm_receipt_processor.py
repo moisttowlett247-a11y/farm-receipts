@@ -52,16 +52,11 @@ def optimize_image_for_ocr(image_path):
     if img is None:
         return image_path
 
-    # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # Use adaptive thresholding to erase background shadows and border frames
-    # This turns the receipt background pure white and text pure black
     processed_img = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 15
     )
 
-    # Save over the temporary file with the clean high-contrast black & white version
     cv2.imwrite(image_path, processed_img)
     return image_path
 
@@ -85,7 +80,6 @@ def split_multiple_receipts(image_path, download_dir):
     base_name = os.path.basename(image_path)
     
     for contour in contours:
-        # High area threshold leaves single long receipts perfectly intact
         if cv2.contourArea(contour) > 350000:  
             x, y, w, h = cv2.boundingRect(contour)
             
@@ -120,7 +114,7 @@ def download_new_receipts(download_dir):
         
         status, data = mail.search(None, '(UNSEEN)')
         if status == 'OK' and data:
-            email_ids = data[0].split()
+            email_ids = data.split()
         else:
             email_ids = []
         
@@ -129,7 +123,7 @@ def download_new_receipts(download_dir):
             if status != 'OK':
                 continue
                 
-            raw_email = data[0][1]
+            raw_email = data
             msg = email.message_from_bytes(raw_email)
             
             has_valid_attachments = False
@@ -222,7 +216,6 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"==================================================\n")
-        
         for primary_file in downloaded_files:
             sub_files = split_multiple_receipts(primary_file, download_dir)
             
@@ -231,29 +224,26 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                 print(f"Optimizing image contrast and scanning: {filename}...")
                 
                 try:
-                    # Run adaptive lighting contrast enhancements on the image first
                     optimized_path = optimize_image_for_ocr(file_path)
-                    
-                    # Pass the clean black and white text directly to Tesseract
                     extracted_text = pytesseract.image_to_string(optimized_path)
                     
                     category = determine_subcategory(extracted_text)
                     estimated_total = extract_basic_amount(extracted_text)
                     
-lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
-
-# Advanced Filter: Look down the top 5 lines for a real store name string
-vendor = "Unknown Vendor"
-for candidate_line in lines[:5]:
-    # Ignore lines that are mostly numbers or punctuation (like timestamps or IDs)
-    clean_candidate = re.sub(r'[^a-zA-Z\s]', '', candidate_line).strip()
-    if len(clean_candidate) > 3:  # Valid name must be longer than 3 alphabetical letters
-        vendor = candidate_line
-        break
-
-vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
+                    lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
+                    
+                    # Advanced Filter Loop: Look down top 5 lines for alphabetical store string
+                    vendor = "Unknown Vendor"
+                    for candidate_line in lines[:5]:
+                        clean_candidate = re.sub(r'[^a-zA-Z\s]', '', candidate_line).strip()
+                        if len(clean_candidate) > 3:
+                            vendor = candidate_line
+                            break
+                            
+                    vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
                     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
                     final_processed_path = os.path.join(processed_dir, new_filename)
+                    
                     os.rename(optimized_path, final_processed_path)
                     
                     log_block = (
