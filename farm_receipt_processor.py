@@ -89,7 +89,10 @@ def download_new_receipts(download_dir):
 # SYSTEM-FORCED CLOUD VISION ENGINE
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """Leverages Google's cloud server with strict JSON enforcement variables."""
+    """
+    Leverages Google's cloud server with standard camelCase JSON configurations
+    to bypass conversation text and extract structured fields perfectly.
+    """
     try:
         with open(file_path, "rb") as image_file:
             import base64
@@ -98,14 +101,15 @@ def analyze_image_with_gemini(file_path):
         mime_type = "image/jpeg" if file_path.lower().endswith(('.jpg', '.jpeg')) else "image/png"
         
         prompt = (
-            "You are an expert bookkeeping AI data collector. Look at this receipt photo. "
-            "1. Identify the store name (e.g., 'The Tool Store', 'Tractor Supply', 'Walmart'). If stylized logo, read it carefully. "
-            "2. Find the final mathematical grand total amount. Ignore intermediate lines or change. "
-            "3. Select exactly one category: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'. "
-            "Return the data matching this schema: {\"vendor\": \"string\", \"total\": \"string\", \"category\": \"string\"}"
+            "You are a strict data extraction bot. Analyze this receipt image.\n"
+            "Return a raw JSON object with these exact keys:\n"
+            "\"vendor\": The name of the store (e.g. 'The Tool Store')\n"
+            "\"total\": The final grand total dollar amount as a string (e.g. '101.51')\n"
+            "\"category\": Must be exactly 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'\n"
+            "Output only pure JSON. No markdown ticks, no preamble, no greeting."
         )
         
-        # 'generationConfig' parameter forces Google to bypass conversation text and output pure data
+        # Standard camelCase configuration blocks match native endpoint requirements
         payload = json.dumps({
             "contents": [{
                 "parts": [
@@ -114,7 +118,7 @@ def analyze_image_with_gemini(file_path):
                 ]
             }],
             "generationConfig": {
-                "response_mime_type": "application/json"
+                "responseMimeType": "application/json"
             }
         })
         
@@ -126,9 +130,17 @@ def analyze_image_with_gemini(file_path):
         data = response.read().decode("utf-8")
         conn.close()
         
+        # Safely drill down through the native Google API candidates array block
         result_json = json.loads(data)
-        text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
-        return json.loads(text_response)
+        
+        # Add quick debugging visibility to GitHub's actions execution terminal
+        if 'candidates' in result_json:
+            text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
+            return json.loads(text_response)
+        else:
+            print(f"API Structure Warning: {result_json}")
+            return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
+            
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
         return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
