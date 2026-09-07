@@ -20,7 +20,7 @@ try:
 except ImportError:
     pass
 
-# Dynamic API Key Rotation Pool Setup
+# Thread-Safe Key Mapping Pool
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -28,26 +28,11 @@ GEMINI_KEYS = [
 ]
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
-current_key_index = 0
-
-def get_next_client():
-    """Cycles seamlessly to the next available free API key to drop unneeded 60s sleep delays."""
-    global current_key_index
-    if not GEMINI_KEYS:
-        raise ValueError("Critical Error: No valid Gemini API keys found inside environmental configurations.")
-    
-    selected_key = GEMINI_KEYS[current_key_index]
-    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
-    
-    print(f"🔄 Rotating credentials... Swapping execution context to API Key Slot #{current_key_index + 1}")
-    return genai.Client(api_key=selected_key)
-
-# Dynamic Trusted Senders List Setup (No hardcoded values)
+# Dynamic Trusted Senders List Setup
 TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
 TRUSTED_SENDERS = [email.strip() for email in TRUSTED_SENDERS_RAW.split(",") if email.strip()]
 
 def setup_folders():
-    # Returns current root directory to keep GitHub saves error-free
     return "."
 
 # =====================================================================
@@ -59,9 +44,8 @@ def download_new_receipts():
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("INBOX")  # Correctly sweeps your active incoming inbox instantly
+        mail.select("INBOX")
         
-        # Pull ALL unread message IDs instantly in a clean string format
         status, data = mail.uid('search', None, 'UNSEEN')
         email_uids = []
         
@@ -71,35 +55,30 @@ def download_new_receipts():
                     email_uids.extend(item.decode('utf-8').split())
         
         for u_id in email_uids:
-            # Fetch the sender header details first to check authorization
             status, header_data = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)])')
             if status != 'OK' or not header_data:
                 continue
                 
-            # DYNAMIC UNPACKING: Safely loop through elements to locate raw bytes instantly
             header_text = ""
             if isinstance(header_data, list):
                 for item in header_data:
-                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
-                        header_text = item[1].decode('utf-8', errors='ignore').lower()
+                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item, bytes):
+                        header_text = item.decode('utf-8', errors='ignore').lower()
                         break
             
-            # ANTI-SPAM PROTECTION: Skip the message immediately if it doesn't match your trusted pool
             if TRUSTED_SENDERS:
                 if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
                     continue
             
-            # Confirmed trusted sender -> Fetch full email payload safely
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            # DYNAMIC UNPACKING: Locate and build the email message object cleanly without indexing risks
             msg = None
             if isinstance(fetch_data, list):
                 for item in fetch_data:
-                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
-                        msg = email.message_from_bytes(item[1])
+                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item, bytes):
+                        msg = email.message_from_bytes(item)
                         break
             
             if msg is None:
@@ -137,106 +116,70 @@ def download_new_receipts():
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return saved_in_memory_images
-# =====================================================================
-# ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
-# =====================================================================
-def analyze_image_with_gemini(img_obj):
-    """Creates a thread-isolated connection session to completely bypass internal SDK queue bottlenecks."""
-    max_retries = len(GEMINI_KEYS) * 2
-    
-    # OPTIMIZATION: Pull a fresh key from the rotation pool instantly for this specific thread
-    global current_key_index
-    if not GEMINI_KEYS:
-        raise ValueError("Critical Error: No valid Gemini API keys found inside environmental configurations.")
-    
-    selected_key = GEMINI_KEYS[current_key_index]
-    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
-    
-    # Initialize a completely independent thread-local client context session
-    local_client = genai.Client(api_key=selected_key)
-    print(f"🚀 Thread spawned clean network connection using API Key Slot #{current_key_index + 1}")
-    
-    temperatures = [0.0, 0.3, 0.7, 1.0, 1.0, 1.0]
-    
-    for attempt in range(max_retries):
-        try:
-            current_temp = temperatures[attempt] if attempt < len(temperatures) else 1.0
-            
-            prompt = (
-                "Analyze this receipt image and extract data into a strict JSON layout.\n"
-                "1. Identify the store name as 'vendor'.\n"
-                "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
-                "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-                "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
-                "5. Read the text lines and pull a list of all purchased individual products into 'items'. "
-                "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
-                "and its corresponding item price matching the line layout."
-            )
-            
-            response = local_client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=[img_obj, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=current_temp,
-                    response_schema=types.Schema(
-                        type=types.Type.OBJECT,
-                        properties={
-                            "vendor": types.Schema(type=types.Type.STRING),
-                            "total": types.Schema(type=types.Type.STRING),
-                            "category": types.Schema(type=types.Type.STRING),
-                            "date": types.Schema(type=types.Type.STRING),
-                            "items": types.Schema(
-                                type=types.Type.ARRAY,
-                                items=types.Schema(type=types.Type.STRING)
-                            ),
-                        },
-                        required=["vendor", "total", "category", "date", "items"],
-                    ),
-                ),
-            )
-            
-            extracted_json = json.loads(response.text.strip())
-            
-            if extracted_json.get("date") in ["[Date Not Found]", "", "None", "Unknown"]:
-                if attempt < max_retries - 1:
-                    raise ValueError("Target field missing in visual extraction output payload.")
-            
-            return extracted_json
-            
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                # Key rotation failsafe: Grab a fresh key instantly and spawn a brand new client context
-                selected_key = GEMINI_KEYS[current_key_index]
-                current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
-                print(f"⚠️ Worker rate-limited. Instantly switching thread session to API Key Slot #{current_key_index + 1}")
-                local_client = genai.Client(api_key=selected_key)
-            elif "503" in error_msg or "UNAVAILABLE" in error_msg:
-                time.sleep(2)
-            else:
-                if "Target field missing" in error_msg and attempt < max_retries - 1:
-                    continue
-                print(f"Direct analysis error: {error_msg}")
-                break
-                
-    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "date": "[Date Not Found]", "items": ["Error: Key rotation pool fully exhausted."]}
 
 # =====================================================================
-# PARALLEL WORKER ENGINE (RAM STREAM INJECTION)
+# THREAD-ISOLATED CLOUD VISION ENGINE (ZERO GLOBAL VARIABLES)
 # =====================================================================
-def process_single_memory_receipt(receipt_data):
-    """Processes an image directly from RAM buffer without hard drive read/write cycles."""
+def analyze_image_with_gemini(img_obj, assigned_key):
+    """Uses a completely isolated API key assigned explicitly to this worker thread."""
+    local_client = genai.Client(api_key=assigned_key)
+    
+    try:
+        prompt = (
+            "Analyze this receipt image and extract data into a strict JSON layout.\n"
+            "1. Identify the store name as 'vendor'.\n"
+            "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
+            "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+            "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
+            "5. Read the text lines and pull a list of all purchased individual products into 'items'. "
+            "For each product entry description, explicitly include its description name, its weight or volume metrics if given (like '50 lb'), "
+            "and its corresponding item price matching the line layout."
+        )
+        
+        response = local_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[img_obj, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
+                response_schema=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "vendor": types.Schema(type=types.Type.STRING),
+                        "total": types.Schema(type=types.Type.STRING),
+                        "category": types.Schema(type=types.Type.STRING),
+                        "date": types.Schema(type=types.Type.STRING),
+                        "items": types.Schema(
+                            type=types.Type.ARRAY,
+                            items=types.Schema(type=types.Type.STRING)
+                        ),
+                    },
+                    required=["vendor", "total", "category", "date", "items"],
+                ),
+            ),
+        )
+        return json.loads(response.text.strip())
+        
+    except Exception as e:
+        print(f"Cloud analysis network warning/error: {e}")
+        return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "date": "[Date Not Found]", "items": [f"Extraction warning: {str(e)}"]}
+
+# =====================================================================
+# THREAD WORKER ROUTER
+# =====================================================================
+def process_single_memory_receipt(args):
+    """Unpacks thread variables cleanly inside isolated scope execution layers."""
+    receipt_data, assigned_key = args
     img_obj = receipt_data["image_object"]
     filename = receipt_data["original_name"]
     
     print(f"Offloading cloud analysis for in-memory image stream: {filename}...")
-    data = analyze_image_with_gemini(img_obj)
+    data = analyze_image_with_gemini(img_obj, assigned_key)
     
     vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
     category = data.get('category', 'Farm:General')
     total = data.get('total', '[Amount Not Found]')
-    receipt_date = data.get('date', '[Date Not Found]') # Added variable capture
+    receipt_date = data.get('date', '[Date Not Found]')
     items_list = data.get('items', [])
     
     if total and not str(total).startswith('$'):
@@ -244,13 +187,12 @@ def process_single_memory_receipt(receipt_data):
     
     formatted_items = ""
     for item in items_list:
-        formatted_items += f"  - {item}\n"
+    formatted_items += f"  - {item}\n"
     if not formatted_items:
         formatted_items = "  - [No Items Found]\n"
     
     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
     
-    # Integrated receipt_date directly into the text layout block output structure
     log_block = (
         f"File Name: {new_filename}\n"
         f"Category: {category}\n"
@@ -265,22 +207,31 @@ def process_single_memory_receipt(receipt_data):
     return log_block
 
 # =====================================================================
-# BATCH EXECUTION MAIN PIPELINE (CONCURRENT BALANCER)
+# BATCH EXECUTION MAIN PIPELINE (THREAD-SAFE ENTRY LAYER)
 # =====================================================================
 def process_receipts(receipt_memory_list, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     log_blocks_gathered = []
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(process_single_memory_receipt, rec): rec for rec in receipt_memory_list}
+    # Map each incoming receipt to an isolated API key from the pool safely
+    worker_inputs = []
+    for idx, receipt in enumerate(receipt_memory_list):
+        assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
+        worker_inputs.append((receipt, assigned_key))
+        
+    # Workers scale dynamically based on the exact batch size safely
+    pool_workers = min(len(receipt_memory_list), 3)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
+        futures = {executor.submit(process_single_memory_receipt, w_in): w_in for w_in in worker_inputs}
         
         for future in concurrent.futures.as_completed(futures):
             try:
                 result_block = future.result()
                 log_blocks_gathered.append(result_block)
             except Exception as e:
-                failed_item = futures[future]
-                print(f"Thread worker critical exception on in-memory item {failed_item['original_name']}: {e}")
+                failed_input = futures[future]
+                print(f"Thread worker exception on file {failed_input[0]['original_name']}: {e}")
 
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
