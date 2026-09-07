@@ -89,10 +89,7 @@ def download_new_receipts(download_dir):
 # SYSTEM-FORCED CLOUD VISION ENGINE
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """
-    Leverages Google's cloud server with standard camelCase JSON configurations
-    to bypass conversation text and extract structured fields perfectly.
-    """
+    """Leverages Google's cloud server with strict dictionary nesting extracts."""
     try:
         with open(file_path, "rb") as image_file:
             import base64
@@ -106,10 +103,9 @@ def analyze_image_with_gemini(file_path):
             "\"vendor\": The name of the store (e.g. 'The Tool Store')\n"
             "\"total\": The final grand total dollar amount as a string (e.g. '101.51')\n"
             "\"category\": Must be exactly 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'\n"
-            "Output only pure JSON. No markdown ticks, no preamble, no greeting."
+            "Output only pure JSON data structures. No markdown markers."
         )
         
-        # Standard camelCase configuration blocks match native endpoint requirements
         payload = json.dumps({
             "contents": [{
                 "parts": [
@@ -130,17 +126,11 @@ def analyze_image_with_gemini(file_path):
         data = response.read().decode("utf-8")
         conn.close()
         
-        # Safely drill down through the native Google API candidates array block
+        # Navigate through the structural JSON response dictionary arrays
         result_json = json.loads(data)
+        text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
+        return json.loads(text_response)
         
-        # Add quick debugging visibility to GitHub's actions execution terminal
-        if 'candidates' in result_json:
-            text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
-            return json.loads(text_response)
-        else:
-            print(f"API Structure Warning: {result_json}")
-            return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
-            
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
         return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General"}
@@ -166,8 +156,7 @@ def process_receipts(downloaded_files, processed_dir):
             category = data.get('category', 'Farm:General')
             total = data.get('total', '[Amount Not Found]')
             
-            # Format the output clean price currency
-            if total and not total.startswith('$'):
+            if total and not str(total).startswith('$'):
                 total = f"${total}"
             
             new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
