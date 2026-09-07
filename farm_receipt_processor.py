@@ -112,7 +112,7 @@ def download_new_receipts(download_dir):
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-                status, data = mail.search(None, '(UNSEEN)')
+        status, data = mail.search(None, '(UNSEEN)')
         email_ids = []
         if status == 'OK' and data:
             # Step 1: Handle if the library wraps the data inside a list array container
