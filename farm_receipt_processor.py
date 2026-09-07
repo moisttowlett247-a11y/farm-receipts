@@ -11,11 +11,6 @@ import pytesseract
 # =====================================================================
 # CONFIGURATION
 # =====================================================================
-# WINDOWS USERS: If your system can't find Tesseract, uncomment the line below 
-# and update it to the exact path where your Tesseract-OCR was installed:
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-# Securely grab passwords from your GitHub Secret Vault
 EMAIL_USER = os.getenv("EMAIL_USER", "your_local_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_local_config_pass")
 IMAP_SERVER = "imap.gmail.com"
@@ -46,8 +41,30 @@ def setup_folders():
     return download_path, processed_path
 
 # =====================================================================
-# MULTI-RECEIPT PICTURE SPLITTING (OPENCV)
+# FREE VISION PRE-PROCESSING & SPLITTING ENGINES
 # =====================================================================
+def optimize_image_for_ocr(image_path):
+    """
+    Applies filters to neutralize dark phone shadows, brighten paper text,
+    and erase heavy black line borders so Tesseract can see boxed totals.
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        return image_path
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Use adaptive thresholding to erase background shadows and border frames
+    # This turns the receipt background pure white and text pure black
+    processed_img = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 15
+    )
+
+    # Save over the temporary file with the clean high-contrast black & white version
+    cv2.imwrite(image_path, processed_img)
+    return image_path
+
 def split_multiple_receipts(image_path, download_dir):
     """
     Smarter receipt handler. Uses an incredibly high area threshold 
@@ -58,7 +75,6 @@ def split_multiple_receipts(image_path, download_dir):
         return [image_path]
         
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Increased blurring to smooth out harsh phone shadows
     blurred = cv2.GaussianBlur(gray, (11, 11), 0)
     _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
@@ -69,8 +85,7 @@ def split_multiple_receipts(image_path, download_dir):
     base_name = os.path.basename(image_path)
     
     for contour in contours:
-        # MASSIVELY increased from 60,000 to 350,000. 
-        # This guarantees a single long receipt with shadows stays completely glued together.
+        # High area threshold leaves single long receipts perfectly intact
         if cv2.contourArea(contour) > 350000:  
             x, y, w, h = cv2.boundingRect(contour)
             
@@ -83,7 +98,6 @@ def split_multiple_receipts(image_path, download_dir):
                 cropped_files.append(cropped_path)
                 receipt_count += 1
                 
-    # If it didn't find multiple distinct giant layouts, keep the original image intact
     if len(cropped_files) <= 1:
         return [image_path]
         
@@ -92,31 +106,20 @@ def split_multiple_receipts(image_path, download_dir):
     except OSError:
         pass
     return cropped_files
-        
-    # Default back to single image tracking if auto-crop wasn't triggered
-    return [image_path]
 
 # =====================================================================
 # EMAIL HARVESTER & ARCHIVER (IMAP FAILSAFES)
 # =====================================================================
 def download_new_receipts(download_dir):
-    """
-    Connects to email, finds unread attachments, handles local name safety, 
-    and archives the email so it is never processed a second time.
-    """
+    """Connects to email, harvests unread receipt attachments, and archives them."""
     saved_files = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        
-        # Select the All Mail folder using proper outer single and inner double quotes
         mail.select('"[Gmail]/All Mail"')
         
-        # FAILSAFE 1: Gather strictly UNREAD messages
         status, data = mail.search(None, '(UNSEEN)')
-        
-        # Standard bulletproof extraction of email IDs from the IMAP list data
-        if status == 'OK' and data[0]:
+        if status == 'OK' and data:
             email_ids = data[0].split()
         else:
             email_ids = []
@@ -139,7 +142,6 @@ def download_new_receipts(download_dir):
                 if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
                     filepath = os.path.join(download_dir, filename)
                     
-                    # LOCAL FAILSAFE: Prevent file overwriting if ran multiple times
                     if os.path.exists(filepath):
                         timestamp_prefix = datetime.now().strftime("%H%M%S_")
                         filename = timestamp_prefix + filename
@@ -151,7 +153,6 @@ def download_new_receipts(download_dir):
                     saved_files.append(filepath)
                     has_valid_attachments = True
             
-            # FAILSAFE 2: Mark read and Archive immediately on execution success
             if has_valid_attachments:
                 mail.store(e_id, '+FLAGS', '\\Seen')
                 try:
@@ -159,7 +160,7 @@ def download_new_receipts(download_dir):
                     mail.copy(e_id, "Processed_Receipts")
                     mail.store(e_id, '+FLAGS', '\\Deleted')
                 except:
-                    pass # Fallback if email provider profile blocks folder adjustments
+                    pass
                     
         mail.expunge()
         mail.logout()
@@ -172,19 +173,14 @@ def download_new_receipts(download_dir):
 # INTELLIGENT RULE INTERPRETER (CONTEXT SEARCH)
 # =====================================================================
 def determine_subcategory(text):
-    """
-    Context-aware animal matching. Infers ambiguous line items 
-    (like salt/vinegar) through wholesale vendor types or shopping card hints.
-    """
+    """Context-aware category mapping rules."""
     text_lower = text.lower()
     
-    # LAYER 1: Vendor Type Checks
     if any(vendor in text_lower for vendor in VENDORS_CHICKEN_ONLY):
         return "Farm:Chickens"
     if any(vendor in text_lower for vendor in VENDORS_COW_ONLY):
         return "Farm:Cows"
         
-    # LAYER 2: Shopping Basket Companion Items Check
     has_chicken_clues = any(kw in text_lower for kw in KEYWORDS_CHICKENS)
     has_cow_clues = any(kw in text_lower for kw in KEYWORDS_COWS)
     
@@ -193,14 +189,12 @@ def determine_subcategory(text):
     if has_cow_clues and not has_chicken_clues:
         return "Farm:Cows"
         
-    # LAYER 3: Volume & Weight Scale Interpretation
     if 'salt' in text_lower or 'vinegar' in text_lower:
         if any(scale_word in text_lower for scale_word in CATTLE_SCALE_WORDS):
             return "Farm:Cows"
         else:
             return "Farm:Chickens"
 
-    # LAYER 4: Baseline keyword fallback search
     if any(kw in text_lower for kw in KEYWORDS_COWS):
         return "Farm:Cows"
     if any(kw in text_lower for kw in KEYWORDS_CHICKENS):
@@ -209,65 +203,50 @@ def determine_subcategory(text):
     return "Farm:General"
 
 def extract_basic_amount(text):
-    """
-    Safeguard price scanner. Uses absolute maximum value matching to ensure
-    the final grand total is captured even if text boundaries or heavy boxed 
-    shadows confuse line-by-line reading.
-    """
-    # Look for any standard decimal price formats like 101.51 or 50.00
+    """Safeguard math price tool utilizing absolute maximum scanning methods."""
     amounts = re.findall(r'\b\d+\.\d{2}\b', text)
-    
     if amounts:
-        # Convert all found numbers to floats so we can calculate the true maximum
         float_amounts = [float(a) for a in amounts]
-        
-        # The grand total is mathematically the largest number on the sheet
         grand_total = max(float_amounts)
         return f"${grand_total:.2f}"
-        
     return "[Amount Not Found]"
 
 # =====================================================================
 # BATCH WORKFLOW CORE
 # =====================================================================
 def process_receipts(downloaded_files, processed_dir, download_dir):
-    """
-    Unpacks multi-receipt shots, runs OCR scans, categorizes fields, 
-    and writes to a single consolidated text log.
-    """
+    """Unpacks sheets, optimizes contrast boundaries, scans text, and writes to log."""
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     
-    # "a" Mode explicitly APPENDS data to prevent overwriting existing daily work
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"==================================================\n")
         
         for primary_file in downloaded_files:
-            # Check if this file contains multiple sub-receipts
             sub_files = split_multiple_receipts(primary_file, download_dir)
             
             for file_path in sub_files:
                 filename = os.path.basename(file_path)
-                print(f"Scanning and extracting text from: {filename}...")
+                print(f"Optimizing image contrast and scanning: {filename}...")
                 
                 try:
-                    extracted_text = pytesseract.image_to_string(file_path)
+                    # Run adaptive lighting contrast enhancements on the image first
+                    optimized_path = optimize_image_for_ocr(file_path)
+                    
+                    # Pass the clean black and white text directly to Tesseract
+                    extracted_text = pytesseract.image_to_string(optimized_path)
                     
                     category = determine_subcategory(extracted_text)
                     estimated_total = extract_basic_amount(extracted_text)
                     
-                    # Parse approximate Vendor (top clean text lines)
                     lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
                     vendor = lines[0] if lines else "Unknown Vendor"
                     vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
-                    
                     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
                     final_processed_path = os.path.join(processed_dir, new_filename)
+                    os.rename(optimized_path, final_processed_path)
                     
-                    os.rename(file_path, final_processed_path)
-                    
-                    # Write formatted tracking data into the master daily file
                     log_block = (
                         f"File Name: {new_filename}\n"
                         f"Category:  {category}\n"
@@ -287,12 +266,9 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
 if __name__ == "__main__":
     print("Free Farm Receipt Processor System Initialized.")
     download_folder, processed_folder = setup_folders()
-    print("Synchronizing with email server...")
     new_paths = download_new_receipts(download_folder)
     
     if new_paths:
-        print(f"Pulled {len(new_paths)} attachments. Initiating structural vision engines...")
         process_receipts(new_paths, processed_folder, download_folder)
-        print(f"\nExecution Complete. Open your file ledger here to copy-paste: {processed_folder}")
     else:
         print("Inbox check clear. No unread receipt attachments detected.")
