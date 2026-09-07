@@ -59,7 +59,7 @@ def download_new_receipts():
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("INBOX") # Correctly sweeps your active incoming inbox instantly
+        mail.select("INBOX")  # Correctly sweeps your active incoming inbox instantly
         
         # Pull ALL unread message IDs instantly in a clean string format
         status, data = mail.uid('search', None, 'UNSEEN')
@@ -76,27 +76,38 @@ def download_new_receipts():
             if status != 'OK' or not header_data:
                 continue
                 
-            # Extract the raw sender address string safely
-            header_text = header_data[0][1].decode('utf-8', errors='ignore').lower() if isinstance(header_data[0], tuple) else ""
+            # Safely unpack raw sender text from the nested list-tuple layout
+            try:
+                if isinstance(header_data, list) and len(header_data) > 0:
+                    raw_header_bytes = header_data[0][1]
+                else:
+                    raw_header_bytes = b""
+                header_text = raw_header_bytes.decode('utf-8', errors='ignore').lower()
+            except (IndexError, TypeError, AttributeError):
+                header_text = ""
             
             # ANTI-SPAM PROTECTION: Skip the message immediately if it doesn't match your trusted pool
             if TRUSTED_SENDERS:
                 if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
                     continue
             
-            # Confirmed trusted sender -> Fetch message data block safely
+            # Confirmed trusted sender -> Fetch full email bytes safely
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            if isinstance(fetch_data, list) and len(fetch_data) > 0:
-                raw_email = fetch_data[0][1] if isinstance(fetch_data[0], tuple) else fetch_data
-            else:
-                raw_email = fetch_data
-                
-            if isinstance(raw_email, bytes):
-                msg = email.message_from_bytes(raw_email)
-            else:
+            # Safely extract and unpack the raw email bytes from the list container instantly
+            try:
+                if isinstance(fetch_data, list) and len(fetch_data) > 0:
+                    raw_bytes = fetch_data[0][1]
+                else:
+                    raw_bytes = b""
+                    
+                if isinstance(raw_bytes, bytes) and len(raw_bytes) > 0:
+                    msg = email.message_from_bytes(raw_bytes)
+                else:
+                    continue
+            except (IndexError, TypeError):
                 continue
             
             has_valid_attachments = False
