@@ -59,10 +59,10 @@ def download_new_receipts():
             if status != 'OK' or not header_data:
                 continue
                 
-            # FIXED: Robust header conversion that extracts sender details instantly without container type restrictions
             header_text = ""
             try:
                 for block in header_data:
+                    # FIX: Explicitly target block[1] to decode content bytes out of the tuple pair instantly
                     if isinstance(block, tuple) and len(block) > 1:
                         header_text = block[1].decode('utf-8', errors='ignore').lower()
                         break
@@ -77,10 +77,10 @@ def download_new_receipts():
             if status != 'OK' or not fetch_data:
                 continue
                 
-            # FIXED: Robust payload unpacking to safely load message body bytes
             msg = None
             try:
                 for block in fetch_data:
+                    # FIX: Explicitly target block[1] to parse the raw multi-part payload bytes immediately
                     if isinstance(block, tuple) and len(block) > 1:
                         msg = email.message_from_bytes(block[1])
                         break
@@ -122,7 +122,6 @@ def download_new_receipts():
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return saved_in_memory_images
-
 
 # =====================================================================
 # THREAD-ISOLATED CLOUD VISION ENGINE (ZERO GLOBAL VARIABLES)
