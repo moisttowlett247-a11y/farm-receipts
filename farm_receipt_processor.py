@@ -240,9 +240,18 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                     category = determine_subcategory(extracted_text)
                     estimated_total = extract_basic_amount(extracted_text)
                     
-                    lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
-                    vendor = lines[0] if lines else "Unknown Vendor"
-                    vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
+lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
+
+# Advanced Filter: Look down the top 5 lines for a real store name string
+vendor = "Unknown Vendor"
+for candidate_line in lines[:5]:
+    # Ignore lines that are mostly numbers or punctuation (like timestamps or IDs)
+    clean_candidate = re.sub(r'[^a-zA-Z\s]', '', candidate_line).strip()
+    if len(clean_candidate) > 3:  # Valid name must be longer than 3 alphabetical letters
+        vendor = candidate_line
+        break
+
+vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
                     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
                     final_processed_path = os.path.join(processed_dir, new_filename)
                     os.rename(optimized_path, final_processed_path)
