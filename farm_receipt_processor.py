@@ -32,23 +32,21 @@ def get_current_date_str():
 
 def setup_folders():
     today = get_current_date_str()
-    download_path = os.path.join("./Receipts_Downloaded", today)
     processed_path = os.path.join("./Receipts_Processed", today)
-    os.makedirs(download_path, exist_ok=True)
     os.makedirs(processed_path, exist_ok=True)
-    return download_path, processed_path
+    return processed_path
 
 # =====================================================================
-# OPTIMIZED HIGH-SPEED IMAP HARVESTER (PEEK METADATA)
+# BULK EMAIL INBOX SWEEPER
 # =====================================================================
-def download_new_receipts(download_dir):
-    saved_files = []
+def download_new_receipts():
+    """Fetches all unread emails and extracts image payloads entirely in memory."""
+    saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-        # Use persistent UIDs instead of dynamic index numbers for faster lookup
         status, data = mail.uid('search', None, '(UNSEEN)')
         email_uids = []
         
@@ -58,7 +56,7 @@ def download_new_receipts(download_dir):
                     email_uids.extend(item.decode('utf-8').split())
         
         for u_id in email_uids:
-            # Pull the email data block safely without restrictive structural filters
+            # Pull full data to extract multipart groups seamlessly
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
@@ -76,13 +74,16 @@ def download_new_receipts(download_dir):
                     
                 filename = part.get_filename()
                 if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    filepath = os.path.join(download_dir, filename)
-                    if os.path.exists(filepath):
-                        filepath = os.path.join(download_dir, f"{datetime.now().strftime('%H%M%S_')}{filename}")
-                        
-                    with open(filepath, 'wb') as f:
-                        f.write(part.get_payload(decode=True))
-                    saved_files.append(filepath)
+                    # OPTIMIZATION: Read raw payload directly into RAM buffer as a PIL image target
+                    from PIL import Image
+                    import io
+                    image_bytes = part.get_payload(decode=True)
+                    pil_image = Image.open(io.BytesIO(image_bytes))
+                    
+                    saved_in_memory_images.append({
+                        "image_object": pil_image,
+                        "original_name": filename
+                    })
                     has_valid_attachments = True
             
             if has_valid_attachments:
@@ -93,28 +94,23 @@ def download_new_receipts(download_dir):
                     mail.uid('store', u_id, '+FLAGS', '\\Deleted')
                 except:
                     pass
-
                     
         mail.expunge()
         mail.logout()
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
-    return saved_files
+    return saved_in_memory_images
 
 # =====================================================================
-# SYSTEM-FORCED CLOUD VISION ENGINE WITH RATE LIMIT DELAY FAILSALES
+# SYSTEM-FORCED CLOUD VISION ENGINE WITH RETRY FAILSAFE LOGIC
 # =====================================================================
-def analyze_image_with_gemini(file_path):
+def analyze_image_with_gemini(img_obj):
     """Leverages Google's cloud server with retry handling for 503 and 429 errors."""
-    from PIL import Image
-    
     max_retries = 3
     retry_delay = 5  # Base cooling delay for handling quick rate-limit bursts
     
     for attempt in range(max_retries):
         try:
-            img = Image.open(file_path)
-            
             prompt = (
                 "Analyze this receipt image and extract data into a strict JSON layout.\n"
                 "1. Identify the store name as 'vendor'.\n"
@@ -127,7 +123,7 @@ def analyze_image_with_gemini(file_path):
             
             response = client.models.generate_content(
                 model='gemini-3.6-flash',
-                contents=[img, prompt],
+                contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=types.Schema(
@@ -150,7 +146,6 @@ def analyze_image_with_gemini(file_path):
             
         except Exception as e:
             error_msg = str(e)
-            # Catch server busy errors (503) and quota limits (429) to avoid hard termination crashes
             if "503" in error_msg or "UNAVAILABLE" in error_msg or "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
                 current_delay = retry_delay * (attempt + 1)
                 print(f"Rate limited or server busy. Retrying attempt {attempt + 1}/{max_retries} in {current_delay}s...")
@@ -162,14 +157,15 @@ def analyze_image_with_gemini(file_path):
     return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike or quota cap hit. Please run workflow again later."]}
 
 # =====================================================================
-# PARALLEL WORKER ENGINE
+# PARALLEL WORKER ENGINE (IN-MEMORY EXECUTION)
 # =====================================================================
-def process_single_file(file_path, processed_dir):
-    """Processes a single receipt completely independent of other files."""
-    filename = os.path.basename(file_path)
-    print(f"Offloading cloud analysis for: {filename}...")
+def process_single_memory_receipt(receipt_data):
+    """Processes an image directly from RAM buffer without hard drive read/write cycles."""
+    img_obj = receipt_data["image_object"]
+    filename = receipt_data["original_name"]
     
-    data = analyze_image_with_gemini(file_path)
+    print(f"Offloading cloud analysis for in-memory image stream: {filename}...")
+    data = analyze_image_with_gemini(img_obj)
     
     vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
     category = data.get('category', 'Farm:General')
@@ -186,12 +182,6 @@ def process_single_file(file_path, processed_dir):
         formatted_items = "  - [No Items Found]\n"
     
     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
-    final_processed_path = os.path.join(processed_dir, new_filename)
-    
-    try:
-        os.rename(file_path, final_processed_path)
-    except Exception as e:
-        print(f"File system conflict on rename for {filename}: {e}")
     
     log_block = (
         f"File Name: {new_filename}\n"
@@ -201,48 +191,48 @@ def process_single_file(file_path, processed_dir):
         f"Items:\n{formatted_items}"
         f"--------------------------------------------------\n"
     )
+    
+    # Explicit garbage collection of image reference object inside thread scope
+    img_obj.close()
     return log_block
 
 # =====================================================================
 # BATCH EXECUTION MAIN PIPELINE (BALANCED WORKER POOL)
 # =====================================================================
-def process_receipts(downloaded_files, processed_dir):
+def process_receipts(receipt_memory_list, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     log_blocks_gathered = []
     
     # max_workers=2 keeps requests balanced under the free tier RPM rate thresholds
-        # Line 223: This block starts with 4 spaces of indentation
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {executor.submit(process_single_file, fp, processed_dir): fp for fp in downloaded_files}
+        futures = {executor.submit(process_single_memory_receipt, rec): rec for rec in receipt_memory_list}
         
-        # Line 226: This loop MUST be indented with 8 spaces to stay inside the 'with' context
         for future in concurrent.futures.as_completed(futures):
             try:
                 result_block = future.result()
                 log_blocks_gathered.append(result_block)
             except Exception as e:
-                failed_file_path = futures[future]
-                print(f"Thread worker critical exception on file {os.path.basename(failed_file_path)}: {e}")
+                failed_item = futures[future]
+                print(f"Thread worker critical exception on in-memory item {failed_item['original_name']}: {e}")
 
-    # Line 235: Drop back to 4 spaces of indentation to open the ledger file
+    # Open ledger exactly once to eliminate lock starvation and speed up I/O
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"==================================================\n")
         log.writelines(log_blocks_gathered)
         
-    print(f"Successfully processed batch of {len(downloaded_files)} receipts.")
+    print(f"Successfully processed batch of {len(receipt_memory_list)} receipts in-memory.")
 
 # =====================================================================
-# MAIN AUTOMATION ENTRY (Flushed completely to the left margin - 0 spaces)
+# =====================================================================
+# MAIN AUTOMATION ENTRY
 # =====================================================================
 if __name__ == "__main__":
-    # These inner lines must have exactly 4 spaces of indentation
     print("Free Farm Receipt Processor System Initialized.")
-    download_folder, processed_folder = setup_folders()
-    new_paths = download_new_receipts(download_folder)
-    if new_paths:
-        process_receipts(new_paths, processed_folder)
+    processed_folder = setup_folders()
+    receipt_queue = download_new_receipts()
+    if receipt_queue:
+        process_receipts(receipt_queue, processed_folder)
     else:
         print("Inbox check clear. No unread receipt attachments detected.")
-
