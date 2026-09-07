@@ -1,7 +1,7 @@
 name: Run Farm Receipt Processor
 
 on:
-  workflow_dispatch: # This adds the manual "Run" button to your dashboard
+  workflow_dispatch:
 
 jobs:
   run-script:
@@ -15,16 +15,11 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install Free Linux OCR Engine & Libraries
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y tesseract-ocr
-        pip install opencv-python-headless numpy pytesseract pillow
-
     - name: Execute Automation Script
       env:
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: python farm_receipt_processor.py
 
     - name: Commit and Save Finished Folders to GitHub Cloud
