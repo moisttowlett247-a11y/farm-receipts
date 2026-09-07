@@ -5,8 +5,8 @@ on:
 
 jobs:
   run-script:
-    # OPTIMIZATION 1: Switch from heavy ubuntu-latest to a stripped-down, faster image
-    runs-on: ubuntu-24.04-minimal
+    # FIX: Reverted to the official standard runner label to instantly clear the queue stall
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout repository code
       uses: actions/checkout@v4
@@ -15,10 +15,10 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        # OPTIMIZATION 2: Enable built-in dependency caching
+        # KEEP: Keeps the fast internal SSD caching active to skip package downloads
         cache: 'pip'
 
-    # This creates a dummy requirement file so setup-python knows what to track for the cache
+    # Creates the dependency reference map file for the caching engine
     - name: Create Requirements Reference
       run: |
         echo "google-genai" > requirements.txt
