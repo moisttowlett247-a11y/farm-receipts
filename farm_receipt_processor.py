@@ -132,6 +132,9 @@ def download_new_receipts():
 # =====================================================================
 # ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
 # =====================================================================
+# =====================================================================
+# ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
+# =====================================================================
 def analyze_image_with_gemini(img_obj):
     """Leverages Google's cloud server with instant API key rotation for 429 errors."""
     max_retries = len(GEMINI_KEYS) * 2
@@ -139,7 +142,7 @@ def analyze_image_with_gemini(img_obj):
     
     for attempt in range(max_retries):
         try:
-                        prompt = (
+            prompt = (
                 "Analyze this receipt image and extract data into a strict JSON layout.\n"
                 "1. Identify the store name as 'vendor'.\n"
                 "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
@@ -150,7 +153,7 @@ def analyze_image_with_gemini(img_obj):
                 "and its corresponding item price matching the line layout."
             )
             
-                response = local_client.models.generate_content(
+            response = local_client.models.generate_content(
                 model='gemini-3.6-flash',
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
@@ -161,17 +164,16 @@ def analyze_image_with_gemini(img_obj):
                             "vendor": types.Schema(type=types.Type.STRING),
                             "total": types.Schema(type=types.Type.STRING),
                             "category": types.Schema(type=types.Type.STRING),
-                            "date": types.Schema(type=types.Type.STRING), # Added parameter track
+                            "date": types.Schema(type=types.Type.STRING),
                             "items": types.Schema(
                                 type=types.Type.ARRAY,
                                 items=types.Schema(type=types.Type.STRING)
                             ),
                         },
-                        required=["vendor", "total", "category", "date", "items"], # Added requirement
+                        required=["vendor", "total", "category", "date", "items"],
                     ),
                 ),
             )
-)
             
             return json.loads(response.text.strip())
             
@@ -187,7 +189,7 @@ def analyze_image_with_gemini(img_obj):
                 print(f"Direct analysis error: {error_msg}")
                 break
                 
-    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Key rotation pool fully exhausted."]}
+    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "date": "[Date Not Found]", "items": ["Error: Key rotation pool fully exhausted."]}
 
 # =====================================================================
 # PARALLEL WORKER ENGINE (RAM STREAM INJECTION)
