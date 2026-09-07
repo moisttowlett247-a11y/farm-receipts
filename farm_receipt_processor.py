@@ -31,7 +31,7 @@ def setup_folders():
     return download_path, processed_path
 
 # =====================================================================
-# EMAIL HARVESTER
+# UNBREAKABLE BULK EMAIL HARVESTER
 # =====================================================================
 def download_new_receipts(download_dir):
     saved_files = []
@@ -43,17 +43,19 @@ def download_new_receipts(download_dir):
         status, data = mail.search(None, '(UNSEEN)')
         email_ids = []
         
-        if status == 'OK' and data and isinstance(data, list):
-            raw_data = data
-            if isinstance(raw_data, bytes):
-                email_ids = raw_data.decode('utf-8').split()
+        if status == 'OK' and data:
+            # Loop handles single or multiple unread email packs cleanly
+            for item in data:
+                if isinstance(item, bytes):
+                    # Decodes raw bytes and merges all message tracking IDs into the list
+                    email_ids.extend(item.decode('utf-8').split())
         
         for e_id in email_ids:
             status, fetch_data = mail.fetch(e_id, '(RFC822)')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data
+            raw_email = fetch_data[0][1] if isinstance(fetch_data, list) else fetch_data
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
