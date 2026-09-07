@@ -32,5 +32,5 @@ jobs:
       run: |
         git config --global user.name "Receipt Bot"
         git config --global user.email "bot@github.com"
-        git add Receipts_Processed/
+        git add Receipt_Data.txt
         git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-saved processed receipts [skip ci]" && git push)
