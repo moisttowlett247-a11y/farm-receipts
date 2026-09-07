@@ -244,12 +244,23 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                     lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
                     
                     # Advanced Filter Loop: Look down top 5 lines for alphabetical store string
+                                        # Advanced Filter Loop: Look down top 5 lines for alphabetical store string
                     vendor = "Unknown Vendor"
                     for candidate_line in lines[:5]:
                         clean_candidate = re.sub(r'[^a-zA-Z\s]', '', candidate_line).strip()
                         if len(clean_candidate) > 3:
                             vendor = candidate_line
                             break
+                    
+                    # SMART CORRECTION DICTIONARY: Maps ugly free OCR glitches directly to real names
+                    # You can add more mapping nicknames here if you find other messy logos later!
+                    vendor_lower = vendor.lower()
+                    if any(glitch in vendor_lower for glitch in ['senate', 'jpeing', 'tool', 'store', 'ol s', 'oo s']):
+                        vendor = "The Tool Store"
+                    elif any(glitch in vendor_lower for glitch in ['tractor', 'supply', 'tsc']):
+                        vendor = "Tractor Supply"
+                    elif any(glitch in vendor_lower for glitch in ['wal', 'mart', 'wmt']):
+                        vendor = "Walmart"
                             
                     vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
                     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
