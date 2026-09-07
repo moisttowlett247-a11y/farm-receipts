@@ -86,41 +86,39 @@ def download_new_receipts(download_dir):
     return saved_files
 
 # =====================================================================
-# HIGH-SPEED FREE GOOGLE CLOUD VISION ENGINE
+# SYSTEM-FORCED CLOUD VISION ENGINE
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """Leverages Google's cloud server to parse totals and categories in milliseconds."""
+    """Leverages Google's cloud server with strict JSON enforcement variables."""
     try:
         with open(file_path, "rb") as image_file:
             import base64
             image_data = base64.b64encode(image_file.read()).decode("utf-8")
             
-        # Determine image format type
         mime_type = "image/jpeg" if file_path.lower().endswith(('.jpg', '.jpeg')) else "image/png"
         
-        # Craft a precise visual directive request
         prompt = (
-            "Analyze this receipt image. Even if there are dark shadows or boxed lines, look for the final mathematical Grand Total. "
-            "Extract the accurate vendor name (the company title at the top). "
-            "Categorize the transaction into one of these three exact subcategories: "
-            "1. 'Farm:Cows' (for cattle feed, ear tags, vet care, mineral blocks, etc.) "
-            "2. 'Farm:Chickens' (for poultry scratch, wire netting, coops, heat lamps, etc.) "
-            "3. 'Farm:General' (for compressors, tools, hardware, fuel, items matching neither animal). "
-            "Provide the answer strictly as a clean JSON layout block with keys 'vendor', 'total', and 'category'. Do not include markdown code block styling ticks."
+            "You are an expert bookkeeping AI data collector. Look at this receipt photo. "
+            "1. Identify the store name (e.g., 'The Tool Store', 'Tractor Supply', 'Walmart'). If stylized logo, read it carefully. "
+            "2. Find the final mathematical grand total amount. Ignore intermediate lines or change. "
+            "3. Select exactly one category: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'. "
+            "Return the data matching this schema: {\"vendor\": \"string\", \"total\": \"string\", \"category\": \"string\"}"
         )
         
-        # Build raw request payload
+        # 'generationConfig' parameter forces Google to bypass conversation text and output pure data
         payload = json.dumps({
             "contents": [{
                 "parts": [
                     {"text": prompt},
                     {"inlineData": {"mimeType": mime_type, "data": image_data}}
                 ]
-            }]
+            }],
+            "generationConfig": {
+                "response_mime_type": "application/json"
+            }
         })
         
-        # Execute direct low-level API call to avoid importing heavy third-party SDK libraries
-        conn = http.client.HTTPSConnection("://googleapis.com")
+        conn = http.client.HTTPSConnection("generativelanguage.googleapis.com")
         headers = {'Content-Type': 'application/json'}
         conn.request("POST", f"/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}", payload, headers)
         
@@ -128,12 +126,8 @@ def analyze_image_with_gemini(file_path):
         data = response.read().decode("utf-8")
         conn.close()
         
-        # Unpack result strings cleanly
         result_json = json.loads(data)
         text_response = result_json['candidates'][0]['content']['parts'][0]['text'].strip()
-        
-        # Clean potential markdown layout wrappers if present
-        text_response = text_response.replace("```json", "").replace("```", "").strip()
         return json.loads(text_response)
     except Exception as e:
         print(f"Cloud analysis error fallback triggered: {e}")
@@ -154,12 +148,15 @@ def process_receipts(downloaded_files, processed_dir):
             filename = os.path.basename(file_path)
             print(f"Offloading cloud analysis for: {filename}...")
             
-            # Send file token directly to Google's backend engine
             data = analyze_image_with_gemini(file_path)
             
-            vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20]
+            vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = data.get('category', 'Farm:General')
             total = data.get('total', '[Amount Not Found]')
+            
+            # Format the output clean price currency
+            if total and not total.startswith('$'):
+                total = f"${total}"
             
             new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
             final_processed_path = os.path.join(processed_dir, new_filename)
