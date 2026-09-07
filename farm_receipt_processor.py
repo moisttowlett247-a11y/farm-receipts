@@ -245,7 +245,7 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                     
                     # Parse approximate Vendor (top clean text lines)
                     lines = [line.strip() for line in extracted_text.split('\n') if line.strip()]
-                    vendor = lines if lines else "Unknown Vendor"
+                    vendor = lines[0] if lines else "Unknown Vendor"
                     vendor = re.sub(r'[\\/*?:"<>|]', "", vendor)[:20]
                     
                     new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
