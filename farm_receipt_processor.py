@@ -36,9 +36,6 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# HIGH-SPEED INBOX SWEEPER (IN-MEMORY STREAMS WITH ANTI-SPAM FILTER)
-# =====================================================================
-# =====================================================================
 # HIGH-SPEED INBOX SWEEPER (BULK BYTE PAYLOAD EXTRACTION)
 # =====================================================================
 def download_new_receipts():
@@ -62,12 +59,15 @@ def download_new_receipts():
             if status != 'OK' or not header_data:
                 continue
                 
-            # FIXED: Scans any data structure smoothly to locate the raw sender text
+            # FIXED: Robust header conversion that extracts sender details instantly without container type restrictions
             header_text = ""
-            for block in header_data:
-                if isinstance(block, tuple) and len(block) > 1 and isinstance(block, bytes):
-                    header_text = block.decode('utf-8', errors='ignore').lower()
-                    break
+            try:
+                for block in header_data:
+                    if isinstance(block, tuple) and len(block) > 1:
+                        header_text = block[1].decode('utf-8', errors='ignore').lower()
+                        break
+            except Exception:
+                header_text = ""
             
             if TRUSTED_SENDERS:
                 if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
@@ -77,12 +77,15 @@ def download_new_receipts():
             if status != 'OK' or not fetch_data:
                 continue
                 
-            # FIXED: Robust unpacker to safely extract raw email message layers
+            # FIXED: Robust payload unpacking to safely load message body bytes
             msg = None
-            for block in fetch_data:
-                if isinstance(block, tuple) and len(block) > 1 and isinstance(block, bytes):
-                    msg = email.message_from_bytes(block)
-                    break
+            try:
+                for block in fetch_data:
+                    if isinstance(block, tuple) and len(block) > 1:
+                        msg = email.message_from_bytes(block[1])
+                        break
+            except Exception:
+                msg = None
             
             if msg is None:
                 continue
@@ -119,6 +122,7 @@ def download_new_receipts():
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return saved_in_memory_images
+
 
 # =====================================================================
 # THREAD-ISOLATED CLOUD VISION ENGINE (ZERO GLOBAL VARIABLES)
