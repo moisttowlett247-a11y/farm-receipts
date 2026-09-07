@@ -8,11 +8,10 @@ import time
 import concurrent.futures
 
 # =====================================================================
-# CONFIGURATION
+# CONFIGURATION & API KEY ROTATION POOL MANAGER
 # =====================================================================
 EMAIL_USER = os.getenv("EMAIL_USER", "your_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_app_password")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 IMAP_SERVER = "imap.gmail.com"
 
 try:
@@ -21,11 +20,29 @@ try:
 except ImportError:
     pass
 
-# Initialize client globally once to eliminate connection overhead inside threads
-try:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-except Exception:
-    client = None
+# Dynamically gather your secrets from the environment variables safely passed by your YAML file
+GEMINI_KEYS = [
+    os.getenv("GEMINI_API_KEY"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3")
+]
+# Strip out any empty values to avoid empty worker client errors
+GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
+
+current_key_index = 0
+
+def get_next_client():
+    """Cycles seamlessly to the next available free API key to drop unneeded 60s sleep delays."""
+    global current_key_index
+    if not GEMINI_KEYS:
+        raise ValueError("Critical Error: No valid Gemini API keys found inside environmental configurations.")
+    
+    selected_key = GEMINI_KEYS[current_key_index]
+    # Update global marker index tracking for subsequent network requests
+    current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
+    
+    print(f"🔄 Rotating credentials... Swapping execution context to API Key Slot #{current_key_index + 1}")
+    return genai.Client(api_key=selected_key)
 
 def get_current_date_str():
     return datetime.now().strftime("%Y-%m-%d")
@@ -37,7 +54,7 @@ def setup_folders():
     return processed_path
 
 # =====================================================================
-# BULK EMAIL INBOX SWEEPER
+# BULK EMAIL INBOX SWEEPER (IN-MEMORY STREAMS)
 # =====================================================================
 def download_new_receipts():
     """Fetches all unread emails and extracts image payloads entirely in memory."""
@@ -56,12 +73,11 @@ def download_new_receipts():
                     email_uids.extend(item.decode('utf-8').split())
         
         for u_id in email_uids:
-            # Pull full data to extract multipart groups seamlessly
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data[0][1] if isinstance(fetch_data, list) and len(fetch_data) > 0 else fetch_data
+            raw_email = fetch_data if isinstance(fetch_data, list) and len(fetch_data) > 0 else fetch_data
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
@@ -74,7 +90,6 @@ def download_new_receipts():
                     
                 filename = part.get_filename()
                 if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    # OPTIMIZATION: Read raw payload directly into RAM buffer as a PIL image target
                     from PIL import Image
                     import io
                     image_bytes = part.get_payload(decode=True)
@@ -102,12 +117,14 @@ def download_new_receipts():
     return saved_in_memory_images
 
 # =====================================================================
-# SYSTEM-FORCED CLOUD VISION ENGINE WITH RETRY FAILSAFE LOGIC
+# ROTATING CLOUD VISION ENGINE WITH SPEED OPTIMIZATIONS
 # =====================================================================
 def analyze_image_with_gemini(img_obj):
     """Leverages Google's cloud server with retry handling for 503 and 429 errors."""
-    max_retries = 3
-    retry_delay = 5  # Base cooling delay for handling quick rate-limit bursts
+    max_retries = len(GEMINI_KEYS) * 2
+    
+    # Establish our first baseline execution client connection
+    local_client = get_next_client()
     
     for attempt in range(max_retries):
         try:
@@ -121,7 +138,7 @@ def analyze_image_with_gemini(img_obj):
                 "and its corresponding item price matching the line layout."
             )
             
-            response = client.models.generate_content(
+            response = local_client.models.generate_content(
                 model='gemini-3.6-flash',
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
@@ -146,18 +163,21 @@ def analyze_image_with_gemini(img_obj):
             
         except Exception as e:
             error_msg = str(e)
-            if "503" in error_msg or "UNAVAILABLE" in error_msg or "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                current_delay = retry_delay * (attempt + 1)
-                print(f"Rate limited or server busy. Retrying attempt {attempt + 1}/{max_retries} in {current_delay}s...")
-                time.sleep(current_delay)
+            # Instantly swap key targets when hit with rate limits to avoid deep SDK sleep penalties
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                print(f"⚠️ Key slot rate limited. Discarding session and swapping to clean backup channel...")
+                local_client = get_next_client()
+            elif "503" in error_msg or "UNAVAILABLE" in error_msg:
+                print(f"Google server busy (503). Standard cooling retry attempt {attempt + 1}/{max_retries}...")
+                time.sleep(3)
             else:
                 print(f"Direct analysis error: {error_msg}")
                 break
                 
-    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike or quota cap hit. Please run workflow again later."]}
+    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Key rotation pool fully exhausted."]}
 
 # =====================================================================
-# PARALLEL WORKER ENGINE (IN-MEMORY EXECUTION)
+# PARALLEL WORKER ENGINE (IN-MEMORY BUFFER)
 # =====================================================================
 def process_single_memory_receipt(receipt_data):
     """Processes an image directly from RAM buffer without hard drive read/write cycles."""
@@ -192,19 +212,18 @@ def process_single_memory_receipt(receipt_data):
         f"--------------------------------------------------\n"
     )
     
-    # Explicit garbage collection of image reference object inside thread scope
     img_obj.close()
     return log_block
 
 # =====================================================================
-# BATCH EXECUTION MAIN PIPELINE (BALANCED WORKER POOL)
+# BATCH EXECUTION MAIN PIPELINE (CONCURRENT BALANCER)
 # =====================================================================
 def process_receipts(receipt_memory_list, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     log_blocks_gathered = []
     
-    # max_workers=2 keeps requests balanced under the free tier RPM rate thresholds
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    # max_workers matches our key pool layout for absolute concurrent delivery
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(process_single_memory_receipt, rec): rec for rec in receipt_memory_list}
         
         for future in concurrent.futures.as_completed(futures):
@@ -215,7 +234,7 @@ def process_receipts(receipt_memory_list, processed_dir):
                 failed_item = futures[future]
                 print(f"Thread worker critical exception on in-memory item {failed_item['original_name']}: {e}")
 
-    # Open ledger exactly once to eliminate lock starvation and speed up I/O
+    # Open ledger exactly once to write data fast to disk
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -224,7 +243,6 @@ def process_receipts(receipt_memory_list, processed_dir):
         
     print(f"Successfully processed batch of {len(receipt_memory_list)} receipts in-memory.")
 
-# =====================================================================
 # =====================================================================
 # MAIN AUTOMATION ENTRY
 # =====================================================================
