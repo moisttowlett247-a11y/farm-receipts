@@ -1,0 +1,23 @@
+
+==================================================
+BATCH RUN DATE: 2026-09-07 04:44:59
+==================================================
+File Name: Farm-General__Unknown_Vendor___1000002240.jpg
+Category:  Farm:General
+Vendor:    Unknown_Vendor
+Amount:    $[Amount Not Found]
+Items:
+  - Error: Could not extract item lists
+--------------------------------------------------
+File Name: Farm-General__The_Tool_Store___1000002228.jpg
+Category:  Farm:General
+Vendor:    The Tool Store
+Amount:    $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00
+  - Regal air hose - $26.00
+  - Regal quick connect set - $6.99
+  - Air chuck used - $6.00
+  - Tape - $2.00
+  - Air gauge - $3.00
+--------------------------------------------------
