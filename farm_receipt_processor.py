@@ -39,7 +39,7 @@ def setup_folders():
     return download_path, processed_path
 
 # =====================================================================
-# UNBREAKABLE BULK EMAIL HARVESTER
+# OPTIMIZED HIGH-SPEED IMAP HARVESTER (PEEK METADATA)
 # =====================================================================
 def download_new_receipts(download_dir):
     saved_files = []
@@ -48,16 +48,28 @@ def download_new_receipts(download_dir):
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-        status, data = mail.search(None, '(UNSEEN)')
-        email_ids = []
+        # Use persistent UIDs instead of dynamic index numbers for faster lookup
+        status, data = mail.uid('search', None, '(UNSEEN)')
+        email_uids = []
         
         if status == 'OK' and data:
             for item in data:
                 if isinstance(item, bytes):
-                    email_ids.extend(item.decode('utf-8').split())
+                    email_uids.extend(item.decode('utf-8').split())
         
-        for e_id in email_ids:
-            status, fetch_data = mail.fetch(e_id, '(RFC822)')
+        for u_id in email_uids:
+            # OPTIMIZATION: Check structural parts first before downloading full email payload
+            status, structure_data = mail.uid('fetch', u_id, '(BODYSTRUCTURE)')
+            if status != 'OK' or not structure_data:
+                continue
+            
+            raw_struct = str(structure_data[0])
+            # Only pull full data if an explicit image layout exists in metadata text lines
+            if not any(ext in raw_struct.lower() for ext in ['image/png', 'image/jpeg', 'image/jpg']):
+                continue
+                
+            # Pull only when confirmed to contain images to eliminate text/newsletter bloat
+            status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
@@ -84,11 +96,11 @@ def download_new_receipts(download_dir):
                     has_valid_attachments = True
             
             if has_valid_attachments:
-                mail.store(e_id, '+FLAGS', '\\Seen')
+                mail.uid('store', u_id, '+FLAGS', '\\Seen')
                 try:
                     mail.create("Processed_Receipts")
-                    mail.copy(e_id, "Processed_Receipts")
-                    mail.store(e_id, '+FLAGS', '\\Deleted')
+                    mail.uid('copy', u_id, "Processed_Receipts")
+                    mail.uid('store', u_id, '+FLAGS', '\\Deleted')
                 except:
                     pass
                     
@@ -99,14 +111,14 @@ def download_new_receipts(download_dir):
     return saved_files
 
 # =====================================================================
-# SYSTEM-FORCED CLOUD VISION ENGINE WITH RETRY FAILSAFE LOGIC
+# SYSTEM-FORCED CLOUD VISION ENGINE WITH RATE LIMIT DELAY FAILSALES
 # =====================================================================
 def analyze_image_with_gemini(file_path):
-    """Leverages Google's cloud server with built-in auto-retry loop for 503 errors."""
+    """Leverages Google's cloud server with retry handling for 503 and 429 errors."""
     from PIL import Image
     
     max_retries = 3
-    retry_delay = 3
+    retry_delay = 5  # Base cooling delay for handling quick rate-limit bursts
     
     for attempt in range(max_retries):
         try:
@@ -147,14 +159,16 @@ def analyze_image_with_gemini(file_path):
             
         except Exception as e:
             error_msg = str(e)
-            if "503" in error_msg or "UNAVAILABLE" in error_msg:
-                print(f"Google server busy (503). Retrying attempt {attempt + 1}/{max_retries} in {retry_delay}s...")
-                time.sleep(retry_delay)
+            # Catch server busy errors (503) and quota limits (429) to avoid hard termination crashes
+            if "503" in error_msg or "UNAVAILABLE" in error_msg or "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                current_delay = retry_delay * (attempt + 1)
+                print(f"Rate limited or server busy. Retrying attempt {attempt + 1}/{max_retries} in {current_delay}s...")
+                time.sleep(current_delay)
             else:
                 print(f"Direct analysis error: {error_msg}")
                 break
                 
-    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike. Please run workflow again."]}
+    return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike or quota cap hit. Please run workflow again later."]}
 
 # =====================================================================
 # PARALLEL WORKER ENGINE
@@ -171,8 +185,8 @@ def process_single_file(file_path, processed_dir):
     total = data.get('total', '[Amount Not Found]')
     items_list = data.get('items', [])
     
-    if total and not str(total).startswith('\$'):
-        total = f"\${total}"
+    if total and not str(total).startswith('$'):
+        total = f"${total}"
     
     formatted_items = ""
     for item in items_list:
@@ -188,7 +202,6 @@ def process_single_file(file_path, processed_dir):
     except Exception as e:
         print(f"File system conflict on rename for {filename}: {e}")
     
-    # Return string segment back to pool manager for safe writing
     log_block = (
         f"File Name: {new_filename}\n"
         f"Category: {category}\n"
@@ -200,27 +213,27 @@ def process_single_file(file_path, processed_dir):
     return log_block
 
 # =====================================================================
-# BATCH EXECUTION MAIN PIPELINE (HIGH RE-ENGINEERED PERFORMANCE)
+# BATCH EXECUTION MAIN PIPELINE (BALANCED WORKER POOL)
 # =====================================================================
 def process_receipts(downloaded_files, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
-    
-    # Run API calls concurrently to strip execution down to network limits
-    # Max workers balances rate limits while executing 5-10 payloads instantly
     log_blocks_gathered = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    
+    # max_workers=2 keeps requests balanced under the free tier RPM rate thresholds
+        # Line 223: This block starts with 4 spaces of indentation
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         futures = {executor.submit(process_single_file, fp, processed_dir): fp for fp in downloaded_files}
         
-    for future in concurrent.futures.as_completed(futures):
-        try:
-            result_block = future.result()
-            log_blocks_gathered.append(result_block)
-        except Exception as e:
-            # This fetches the exact file path tied to this specific failing thread job
-            failed_file_path = futures[future]
-            print(f"Thread worker critical exception on file {os.path.basename(failed_file_path)}: {e}")
+        # Line 226: This loop MUST be indented with 8 spaces to stay inside the 'with' context
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result_block = future.result()
+                log_blocks_gathered.append(result_block)
+            except Exception as e:
+                failed_file_path = futures[future]
+                print(f"Thread worker critical exception on file {os.path.basename(failed_file_path)}: {e}")
 
-    # Open ledger exactly once to eliminate lock starvation and speed up I/O
+    # Line 235: Drop back to 4 spaces of indentation to open the ledger file
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -230,9 +243,10 @@ def process_receipts(downloaded_files, processed_dir):
     print(f"Successfully processed batch of {len(downloaded_files)} receipts.")
 
 # =====================================================================
-# MAIN AUTOMATION ENTRY
+# MAIN AUTOMATION ENTRY (Flushed completely to the left margin - 0 spaces)
 # =====================================================================
 if __name__ == "__main__":
+    # These inner lines must have exactly 4 spaces of indentation
     print("Free Farm Receipt Processor System Initialized.")
     download_folder, processed_folder = setup_folders()
     new_paths = download_new_receipts(download_folder)
@@ -240,3 +254,4 @@ if __name__ == "__main__":
         process_receipts(new_paths, processed_folder)
     else:
         print("Inbox check clear. No unread receipt attachments detected.")
+
