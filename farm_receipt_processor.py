@@ -238,8 +238,7 @@ def process_receipts(downloaded_files, processed_dir, download_dir):
                 print(f"Scanning and extracting text from: {filename}...")
                 
                 try:
-                    img = Image.open(file_path)
-                    extracted_text = pytesseract.image_to_string(img)
+                    extracted_text = pytesseract.image_to_string(file_path)
                     
                     category = determine_subcategory(extracted_text)
                     estimated_total = extract_basic_amount(extracted_text)
