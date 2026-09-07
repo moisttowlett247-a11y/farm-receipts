@@ -112,11 +112,13 @@ def download_new_receipts(download_dir):
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-        status, data = mail.search(None, '(UNSEEN)')
+                status, data = mail.search(None, '(UNSEEN)')
+        email_ids = []
         if status == 'OK' and data:
-            email_ids = data.split()
-        else:
-            email_ids = []
+            # Safely extract indices whether they arrive inside a list or a raw byte string
+            raw_ids = data[0] if isinstance(data, list) else data
+            if raw_ids:
+                email_ids = raw_ids.split()
         
         for e_id in email_ids:
             status, data = mail.fetch(e_id, '(RFC822)')
