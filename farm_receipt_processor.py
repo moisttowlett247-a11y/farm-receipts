@@ -63,10 +63,11 @@ def download_new_receipts(download_dir):
             if status != 'OK' or not structure_data:
                 continue
             
-            raw_struct = str(structure_data[0])
-            # Only pull full data if an explicit image layout exists in metadata text lines
-            if not any(ext in raw_struct.lower() for ext in ['image/png', 'image/jpeg', 'image/jpg']):
+                        raw_struct = str(structure_data).lower()
+            # FIX: Detect images OR multipart wrappers containing multiple file attachments
+            if not any(x in raw_struct for x in ['image/png', 'image/jpeg', 'image/jpg', 'multipart/mixed', 'multipart/related']):
                 continue
+
                 
             # Pull only when confirmed to contain images to eliminate text/newsletter bloat
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
