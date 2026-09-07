@@ -8,7 +8,7 @@ import time
 import concurrent.futures
 
 # =====================================================================
-# CONFIGURATION & API KEY ROTATION POOL MANAGER
+# CONFIGURATION & KEY/SENDER POOL MANAGER
 # =====================================================================
 EMAIL_USER = os.getenv("EMAIL_USER", "your_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_app_password")
@@ -20,13 +20,12 @@ try:
 except ImportError:
     pass
 
-# Dynamically gather your secrets from the environment variables safely passed by your YAML file
+# Dynamic API Key Rotation Pool Setup
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
     os.getenv("GEMINI_API_KEY_2"),
     os.getenv("GEMINI_API_KEY_3")
 ]
-# Strip out any empty values to avoid empty worker client errors
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
 current_key_index = 0
@@ -38,31 +37,43 @@ def get_next_client():
         raise ValueError("Critical Error: No valid Gemini API keys found inside environmental configurations.")
     
     selected_key = GEMINI_KEYS[current_key_index]
-    # Update global marker index tracking for subsequent network requests
     current_key_index = (current_key_index + 1) % len(GEMINI_KEYS)
     
     print(f"🔄 Rotating credentials... Swapping execution context to API Key Slot #{current_key_index + 1}")
     return genai.Client(api_key=selected_key)
 
-def get_current_date_str():
-    return datetime.now().strftime("%Y-%m-%d")
+# Dynamic Trusted Senders List Setup (No hardcoded values)
+TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
+TRUSTED_SENDERS = [email.strip() for email in TRUSTED_SENDERS_RAW.split(",") if email.strip()]
 
 def setup_folders():
-    # Keep it simple: Returns current root directory to keep GitHub saves error-free
+    # Returns current root directory to keep GitHub saves error-free
     return "."
 
 # =====================================================================
-# BULK EMAIL INBOX SWEEPER (IN-MEMORY STREAMS)
+# HIGH-SPEED INBOX SWEEPER (IN-MEMORY STREAMS WITH ANTI-SPAM FILTER)
 # =====================================================================
 def download_new_receipts():
-    """Fetches all unread emails and extracts image payloads entirely in memory."""
+    """Fetches ONLY unread emails from specific trusted senders entirely in memory."""
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select('"[Gmail]/All Mail"')
         
-        status, data = mail.uid('search', None, '(UNSEEN)')
+        # Build the server-side query string natively based on hidden env variables
+        if not TRUSTED_SENDERS:
+            search_query = 'UNSEEN'
+        elif len(TRUSTED_SENDERS) == 1:
+            search_query = f'UNSEEN FROM "{TRUSTED_SENDERS[0]}"'
+        else:
+            search_query = f'FROM "{TRUSTED_SENDERS[0]}"'
+            for sender in TRUSTED_SENDERS[1:]:
+                search_query = f'OR FROM "{sender}" {search_query}'
+            search_query = f'UNSEEN ({search_query})'
+            
+        print(f"Applying secure filter query: {search_query}")
+        status, data = mail.uid('search', None, search_query)
         email_uids = []
         
         if status == 'OK' and data:
@@ -75,7 +86,11 @@ def download_new_receipts():
             if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = fetch_data if isinstance(fetch_data, list) and len(fetch_data) > 0 else fetch_data
+            if isinstance(fetch_data, list) and len(fetch_data) > 0:
+                raw_email = fetch_data[0][1] if isinstance(fetch_data[0], tuple) else fetch_data
+            else:
+                raw_email = fetch_data
+                
             if isinstance(raw_email, bytes):
                 msg = email.message_from_bytes(raw_email)
             else:
@@ -115,13 +130,11 @@ def download_new_receipts():
     return saved_in_memory_images
 
 # =====================================================================
-# ROTATING CLOUD VISION ENGINE WITH SPEED OPTIMIZATIONS
+# ROTATING CLOUD VISION ENGINE WITH RATE LIMIT BYPASS FAILSAFES
 # =====================================================================
 def analyze_image_with_gemini(img_obj):
-    """Leverages Google's cloud server with retry handling for 503 and 429 errors."""
+    """Leverages Google's cloud server with instant API key rotation for 429 errors."""
     max_retries = len(GEMINI_KEYS) * 2
-    
-    # Establish our first baseline execution client connection
     local_client = get_next_client()
     
     for attempt in range(max_retries):
@@ -161,7 +174,6 @@ def analyze_image_with_gemini(img_obj):
             
         except Exception as e:
             error_msg = str(e)
-            # Instantly swap key targets when hit with rate limits to avoid deep SDK sleep penalties
             if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
                 print(f"⚠️ Key slot rate limited. Discarding session and swapping to clean backup channel...")
                 local_client = get_next_client()
@@ -175,7 +187,7 @@ def analyze_image_with_gemini(img_obj):
     return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Key rotation pool fully exhausted."]}
 
 # =====================================================================
-# PARALLEL WORKER ENGINE (IN-MEMORY BUFFER)
+# PARALLEL WORKER ENGINE (RAM STREAM INJECTION)
 # =====================================================================
 def process_single_memory_receipt(receipt_data):
     """Processes an image directly from RAM buffer without hard drive read/write cycles."""
@@ -217,11 +229,9 @@ def process_single_memory_receipt(receipt_data):
 # BATCH EXECUTION MAIN PIPELINE (CONCURRENT BALANCER)
 # =====================================================================
 def process_receipts(receipt_memory_list, processed_dir):
-    # Writes directly to a unified main ledger file in your root folder
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     log_blocks_gathered = []
     
-    # max_workers=3 matches our rotating key pool layout for concurrent delivery
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(process_single_memory_receipt, rec): rec for rec in receipt_memory_list}
         
@@ -233,7 +243,6 @@ def process_receipts(receipt_memory_list, processed_dir):
                 failed_item = futures[future]
                 print(f"Thread worker critical exception on in-memory item {failed_item['original_name']}: {e}")
 
-    # Open ledger exactly once to write data fast to disk
     with open(log_file_path, "a", encoding="utf-8") as log:
         log.write(f"\n==================================================\n")
         log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -252,4 +261,4 @@ if __name__ == "__main__":
     if receipt_queue:
         process_receipts(receipt_queue, processed_folder)
     else:
-        print("Inbox check clear. No unread receipt attachments detected.")
+        print("Inbox check clear. No unread receipt attachments detected matching filter specifications.")
