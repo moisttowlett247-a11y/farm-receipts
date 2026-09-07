@@ -58,17 +58,7 @@ def download_new_receipts(download_dir):
                     email_uids.extend(item.decode('utf-8').split())
         
         for u_id in email_uids:
-            # OPTIMIZATION: Check structural parts first before downloading full email payload
-            status, structure_data = mail.uid('fetch', u_id, '(BODYSTRUCTURE)')
-            if status != 'OK' or not structure_data:
-                continue
-            
-                            # Check structural layers directly to avoid scope assignment traps
-            valid_types = ['image/png', 'image/jpeg', 'image/jpg', 'multipart/mixed', 'multipart/related']
-            if not any(x in str(structure_data).lower() for x in valid_types):
-                continue
-                
-            # Pull only when confirmed to contain images to eliminate text/newsletter bloat
+            # Pull the email data block safely without restrictive structural filters
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
@@ -103,6 +93,7 @@ def download_new_receipts(download_dir):
                     mail.uid('store', u_id, '+FLAGS', '\\Deleted')
                 except:
                     pass
+
                     
         mail.expunge()
         mail.logout()
