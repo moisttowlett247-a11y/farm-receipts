@@ -98,9 +98,8 @@ def analyze_image_with_gemini(file_path):
     """Leverages Google's cloud server with built-in auto-retry loop for 503 errors."""
     from PIL import Image
     
-    # Try up to 3 times if Google's free servers are busy
     max_retries = 3
-    retry_delay = 3  # Seconds to wait between tries
+    retry_delay = 3
     
     for attempt in range(max_retries):
         try:
@@ -138,21 +137,17 @@ def analyze_image_with_gemini(file_path):
                 ),
             )
             
-            # If successful, parse and return the data immediately
             return json.loads(response.text.strip())
             
         except Exception as e:
             error_msg = str(e)
-            # If it's a 503 traffic spike error, pause and retry
             if "503" in error_msg or "UNAVAILABLE" in error_msg:
                 print(f"Google server busy (503). Retrying attempt {attempt + 1}/{max_retries} in {retry_delay}s...")
                 time.sleep(retry_delay)
             else:
-                # If it's a structural or other coding error, fail safely right away
                 print(f"Direct analysis error: {error_msg}")
                 break
                 
-    # Ultimate fallback if all retries hit a wall
     return {"vendor": "Unknown_Vendor", "total": "[Amount Not Found]", "category": "Farm:General", "items": ["Error: Cloud traffic spike. Please run workflow again."]}
 
 # =====================================================================
@@ -171,6 +166,7 @@ def process_receipts(downloaded_files, processed_dir):
             print(f"Offloading cloud analysis for: {filename}...")
             
             data = analyze_image_with_gemini(file_path)
+            
             vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = data.get('category', 'Farm:General')
             total = data.get('total', '[Amount Not Found]')
@@ -187,7 +183,6 @@ def process_receipts(downloaded_files, processed_dir):
             
             new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
             final_processed_path = os.path.join(processed_dir, new_filename)
-            
             os.rename(file_path, final_processed_path)
             
             log_block = (
