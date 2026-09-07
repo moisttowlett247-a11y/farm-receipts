@@ -105,7 +105,9 @@ def split_multiple_receipts(image_path, download_dir):
 # EMAIL HARVESTER & ARCHIVER (IMAP FAILSAFES)
 # =====================================================================
 def download_new_receipts(download_dir):
-    """Connects to email, harvests unread receipt attachments, and archives them."""
+    """
+    Connects to email, harvests unread receipt attachments, and archives them.
+    """
     saved_files = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -114,24 +116,26 @@ def download_new_receipts(download_dir):
         
         status, data = mail.search(None, '(UNSEEN)')
         email_ids = []
-        if status == 'OK' and data:
-            # Step 1: Handle if the library wraps the data inside a list array container
-            target_data = data[0] if isinstance(data, list) else data
-            
-            # Step 2: Convert raw bytes to standard text if necessary, then split into clean IDs
-            if target_data:
-                if isinstance(target_data, bytes):
-                    target_data = target_data.decode('utf-8')
-                email_ids = target_data.split()
-
-    
+        
+        if status == 'OK' and data and isinstance(data, list):
+            # Target the first actual byte-string element inside the list envelope
+            raw_data = data[0]
+            if isinstance(raw_data, bytes):
+                email_ids = raw_data.decode('utf-8').split()
+            elif isinstance(raw_data, str):
+                email_ids = raw_data.split()
+        
         for e_id in email_ids:
-            status, data = mail.fetch(e_id, '(RFC822)')
-            if status != 'OK':
+            status, fetch_data = mail.fetch(e_id, '(RFC822)')
+            if status != 'OK' or not fetch_data:
                 continue
                 
-            raw_email = data
-            msg = email.message_from_bytes(raw_email)
+            # Unpack the raw email body string securely
+            raw_email = fetch_data[0][1]
+            if isinstance(raw_email, bytes):
+                msg = email.message_from_bytes(raw_email)
+            else:
+                continue
             
             has_valid_attachments = False
             
