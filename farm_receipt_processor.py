@@ -38,6 +38,9 @@ def setup_folders():
 # =====================================================================
 # HIGH-SPEED INBOX SWEEPER (IN-MEMORY STREAMS WITH ANTI-SPAM FILTER)
 # =====================================================================
+# =====================================================================
+# HIGH-SPEED INBOX SWEEPER (BULK BYTE PAYLOAD EXTRACTION)
+# =====================================================================
 def download_new_receipts():
     """Fetches all unread emails and matches them against trusted senders instantly in memory."""
     saved_in_memory_images = []
@@ -59,12 +62,12 @@ def download_new_receipts():
             if status != 'OK' or not header_data:
                 continue
                 
+            # FIXED: Scans any data structure smoothly to locate the raw sender text
             header_text = ""
-            if isinstance(header_data, list):
-                for item in header_data:
-                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item, bytes):
-                        header_text = item.decode('utf-8', errors='ignore').lower()
-                        break
+            for block in header_data:
+                if isinstance(block, tuple) and len(block) > 1 and isinstance(block, bytes):
+                    header_text = block.decode('utf-8', errors='ignore').lower()
+                    break
             
             if TRUSTED_SENDERS:
                 if not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
@@ -74,12 +77,12 @@ def download_new_receipts():
             if status != 'OK' or not fetch_data:
                 continue
                 
+            # FIXED: Robust unpacker to safely extract raw email message layers
             msg = None
-            if isinstance(fetch_data, list):
-                for item in fetch_data:
-                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item, bytes):
-                        msg = email.message_from_bytes(item)
-                        break
+            for block in fetch_data:
+                if isinstance(block, tuple) and len(block) > 1 and isinstance(block, bytes):
+                    msg = email.message_from_bytes(block)
+                    break
             
             if msg is None:
                 continue
