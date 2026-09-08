@@ -161,17 +161,17 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (DIRECT REST API WITH MULTI-RECEIPT SUPPORT)
+# THREAD-ISOLATED VISION ENGINE (DIRECT REST API USING GEMINI 3.5 LITE)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST using Gemini 1.5 Flash."""
+    """Processes image directly over REST using Gemini 3.5 Lite."""
     buffer = io.BytesIO()
     img_obj.save(buffer, format="JPEG", quality=85)
     img_bytes = buffer.getvalue()
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
-    # Pin the specific version snapshot under v1beta
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key={assigned_key}"
+    # REST endpoint configured explicitly for gemini-3.5-lite
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-lite:generateContent?key={assigned_key}"
 
     prompt = (
         "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts placed side-by-side or stacked.\n"
