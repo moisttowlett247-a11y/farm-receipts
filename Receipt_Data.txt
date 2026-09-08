@@ -1,0 +1,92 @@
+
+==================================================
+BATCH RUN DATE: 2026-09-08 19:05:08
+==================================================
+File Name: Farm-General__Walmart_r2___1000002294.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-08-24
+Amount: $145.50
+Items:
+  - DR PEPPER - $9.97
+  - FRENCH BREAD - $0.44
+  - FRENCH BREAD - $0.44
+  - ITAL SLCE - $0.88
+  - ITAL SLCE - $0.88
+  - 50CT WIPE - $1.17
+  - 50CT WIPE - $1.17
+  - 50CT WIPE - $1.17
+  - GV GR T 40 - $2.78
+  - GV GR T 40 - $2.78
+  - 14 RR NUTR - $14.87
+  - GV 3T EVERYD - $4.74
+  - TRD ROTI CLD - $3.97
+  - TRD ROTI CLD - $3.97
+  - COTT CMFT 6M - $6.98
+  - TRD ROTI CLD - $3.97
+  - GV SPAG 16OZ - $1.24
+  - GV SPAG 16OZ - $1.24
+  - KFT SHRD 16Z - $5.64
+  - PAPRIKA - $1.08
+  - GV CHK 32OZ - $1.50
+  - GV CHK 32OZ - $1.50
+  - GV FAM SIZE - $1.72
+  - GV FAM SIZE - $1.72
+  - SOUR CREAM - $3.72
+  - FRG PARMESAN - $6.24
+  - GV UNSLT BTR - $3.06
+  - FF 12PK CAT - $11.52
+  - FF 12PK CAT - $11.52
+  - GV RICE 8OOZ - $3.37
+  - CH DRK BRN - $3.74
+  - DG RSNC PEP - $5.97
+  - DG RSNC PEP - $5.97
+  - DONUTS - $4.18
+--------------------------------------------------
+File Name: Farm-General__The_Tool_Store_r1___1000002294.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00
+  - Regal air hose - $26.00
+  - Regal quick connect set - $6.99
+  - Air chuck used - $6.00
+  - Tape - $2.00
+  - Air gauge - $3.00
+--------------------------------------------------
+File Name: Farm-General__Walmart_r3___1000002294.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Amount: $105.07
+Items:
+  - GV SWICH WHT - $1.48
+  - DR PEPPER - $9.97
+  - PLUG REFILL - $9.94
+  - GV GR T 40 - $2.84
+  - GV GR T 40 - $2.84
+  - GV 2D EVERYD - $3.86
+  - GRD BTTRMLK - $2.97
+  - GRD BTTRMLK - $2.97
+  - DONUTS - $4.18
+  - DG RSNC PEP - $5.97
+  - DG RSNC PEP - $5.97
+  - COTT CMFT 6M - $6.98
+  - GV 2D EVERYD - $2.96
+  - SMTFD WH CHD - $5.94
+  - HVRANCH 36OZ - $7.38
+  - BBQ SAUCE - $3.24
+  - SUGAR GRANU - $7.38
+  - PC 3OOCT WPE - $6.87
+  - 1LB ROLL SSG - $4.97
+--------------------------------------------------
+File Name: Farm-General__Walmart_r4___1000002294.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Amount: $38.01
+Items:
+  - MENS SHOES - $34.48
+--------------------------------------------------
