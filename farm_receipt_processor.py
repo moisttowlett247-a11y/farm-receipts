@@ -1,22 +1,27 @@
-import imaplib
-import email
+import sys
+import time
+
+print(f"[{time.strftime('%H:%M:%S')}] Python process started...", flush=True)
+
 import os
 import re
 import json
-from datetime import datetime, timedelta
-import time
-import concurrent.futures
-import socket
 import io
 import base64
+from datetime import datetime, timedelta
+
+print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
+
+import socket
+socket.setdefaulttimeout(15.0)
+
 import requests
 from PIL import Image
 
-# Force network operations to timeout after 15 seconds to prevent hanging
-socket.setdefaulttimeout(15.0)
-
 # Disable PIL image size limit warnings for fast memory processing
 Image.MAX_IMAGE_PIXELS = None
+
+print(f"[{time.strftime('%H:%M:%S')}] Third-party dependencies loaded.", flush=True)
 
 # =====================================================================
 # CONFIGURATION & KEY MANAGER
@@ -43,6 +48,10 @@ def setup_folders():
 # =====================================================================
 def download_new_receipts():
     """Fetches and downscales image attachments using targeted IMAP fetches."""
+    import imaplib
+    import email
+
+    print(f"[{time.strftime('%H:%M:%S')}] Connecting to IMAP server...", flush=True)
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -62,6 +71,7 @@ def download_new_receipts():
             return None, []
 
         email_uids = data[0].decode('utf-8').split()
+        print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s).", flush=True)
         
         for u_id in email_uids:
             # Step 1: Lightweight Header Check (Sender Filter)
@@ -135,7 +145,7 @@ def download_new_receipts():
             except Exception:
                 pass
     except Exception as e:
-        print(f"Inbox processing warning/error: {e}")
+        print(f"Inbox processing warning/error: {e}", flush=True)
     return None, []
 
 # =====================================================================
@@ -208,6 +218,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
 
     for attempt in range(max_fast_retries + 1):
         try:
+            print(f"[{time.strftime('%H:%M:%S')}] Sending request to Gemini REST API...", flush=True)
             response = requests.post(url, headers=headers, json=payload, timeout=20)
             response.raise_for_status()
             res_json = response.json()
@@ -218,7 +229,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
             if attempt < max_fast_retries:
                 time.sleep(1)
             else:
-                print(f"REST API error for attachment: {e}")
+                print(f"REST API error for attachment: {e}", flush=True)
                 return None
 
 # =====================================================================
@@ -283,9 +294,11 @@ def process_single_email_group(args):
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
 # =====================================================================
-# PIPELINE COORDINATOR (FAST IMAP TERMINATION)
+# PIPELINE COORDINATOR
 # =====================================================================
 def process_receipts(mail_session, email_packages, processed_dir):
+    import concurrent.futures
+
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     extracted_records = []
     worker_inputs = []
@@ -306,9 +319,9 @@ def process_receipts(mail_session, email_packages, processed_dir):
                     extracted_records.extend(result["blocks"])
                     mail_session.uid('store', u_id, '+FLAGS', '\\Seen')
                 else:
-                    print(f"⚠️ Total failure on UID {u_id}. Keeping unread.")
+                    print(f"⚠️ Total failure on UID {u_id}. Keeping unread.", flush=True)
             except Exception as e:
-                print(f"Thread processor error: {e}")
+                print(f"Thread processor error: {e}", flush=True)
                 
     if extracted_records:
         def get_sorting_date(log_text):
@@ -327,7 +340,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
             log.write(f"==================================================\n")
             log.writelines(extracted_records)
             
-        print(f"Processed and logged {len(extracted_records)} receipts.")
+        print(f"[{time.strftime('%H:%M:%S')}] Processed and logged {len(extracted_records)} receipts.", flush=True)
         
     try:
         mail_session.close()
@@ -339,10 +352,10 @@ def process_receipts(mail_session, email_packages, processed_dir):
 # MAIN ENTRY
 # =====================================================================
 if __name__ == "__main__":
-    print("Free Farm Receipt Processor Initialized.")
+    print(f"[{time.strftime('%H:%M:%S')}] Free Farm Receipt Processor Initialized.", flush=True)
     processed_folder = setup_folders()
     mail_session, email_queue = download_new_receipts()
     if email_queue:
         process_receipts(mail_session, email_queue, processed_folder)
     else:
-        print("Inbox check clear. No unread receipts found.")
+        print(f"[{time.strftime('%H:%M:%S')}] Inbox check clear. No unread receipts found.", flush=True)
