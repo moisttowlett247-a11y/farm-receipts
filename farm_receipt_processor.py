@@ -157,10 +157,10 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (DIRECT REST API)
+# THREAD-ISOLATED VISION ENGINE (DIRECT REST API WITH MULTI-RECEIPT SUPPORT)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST to bypass Python SDK hangs."""
+    """Processes image directly over REST, handling 1 or multiple receipts dynamically."""
     buffer = io.BytesIO()
     img_obj.save(buffer, format="JPEG", quality=85)
     img_bytes = buffer.getvalue()
@@ -169,11 +169,13 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
     prompt = (
-        "Analyze this receipt image and extract data into a strict JSON layout.\n"
+        "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts.\n"
+        "Extract data for EACH distinct receipt visible in the image as an object inside the 'receipts' array.\n"
+        "For each receipt found:\n"
         "1. Identify the store name as 'vendor'.\n"
         "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
         "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-        "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
+        "4. Identify the transaction or purchase date printed on the receipt as 'date' (format YYYY-MM-DD if clear, otherwise extract text string).\n"
         "5. Extract all purchased individual items as an array in 'items'. For each item include:\n"
         "   - 'name': item title or description\n"
         "   - 'price': item cost/price (no currency symbols, or empty string if not shown)\n"
@@ -200,24 +202,33 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
             "response_schema": {
                 "type": "OBJECT",
                 "properties": {
-                    "vendor": {"type": "STRING"},
-                    "total": {"type": "STRING"},
-                    "category": {"type": "STRING"},
-                    "date": {"type": "STRING"},
-                    "items": {
+                    "receipts": {
                         "type": "ARRAY",
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "name": {"type": "STRING"},
-                                "price": {"type": "STRING"},
-                                "weight": {"type": "STRING"}
+                                "vendor": {"type": "STRING"},
+                                "total": {"type": "STRING"},
+                                "category": {"type": "STRING"},
+                                "date": {"type": "STRING"},
+                                "items": {
+                                    "type": "ARRAY",
+                                    "items": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "name": {"type": "STRING"},
+                                            "price": {"type": "STRING"},
+                                            "weight": {"type": "STRING"}
+                                        },
+                                        "required": ["name", "price", "weight"]
+                                    }
+                                }
                             },
-                            "required": ["name", "price", "weight"]
+                            "required": ["vendor", "total", "category", "date", "items"]
                         }
                     }
                 },
-                "required": ["vendor", "total", "category", "date", "items"]
+                "required": ["receipts"]
             }
         }
     }
@@ -256,47 +267,51 @@ def process_single_email_group(args):
         data = analyze_image_with_gemini(img_obj, assigned_key)
         img_obj.close()
         
-        if data is None:
+        if not data or "receipts" not in data:
             continue
             
-        vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
-        category = data.get('category', 'Farm:General')
-        total = data.get('total', '[Amount Not Found]')
-        receipt_date = data.get('date', '[Date Not Found]')
-        items_list = data.get('items', [])
+        receipts_found = data.get("receipts", [])
         
-        if total and not str(total).startswith('$'):
-            total = f"${total}"
+        for idx, receipt in enumerate(receipts_found, start=1):
+            vendor = re.sub(r'[\\/*?:"<>|]', "", receipt.get('vendor', 'Unknown_Vendor'))[:20].strip()
+            category = receipt.get('category', 'Farm:General')
+            total = receipt.get('total', '[Amount Not Found]')
+            receipt_date = receipt.get('date', '[Date Not Found]')
+            items_list = receipt.get('items', [])
             
-        item_lines = []
-        if items_list:
-            for item in items_list:
-                if isinstance(item, dict):
-                    name = item.get('name', 'Unknown Item')
-                    price = item.get('price', '').strip()
-                    weight = item.get('weight', '').strip()
-                    
-                    price_str = f" - ${price}" if price else ""
-                    weight_str = f" ({weight})" if weight else ""
-                    item_lines.append(f"  - {name}{price_str}{weight_str}\n")
-                else:
-                    item_lines.append(f"  - {item}\n")
-            formatted_items = "".join(item_lines)
-        else:
-            formatted_items = "  - [No Items Found]\n"
-        
-        new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
-        
-        log_entry = (
-            f"File Name: {new_filename}\n"
-            f"Category: {category}\n"
-            f"Vendor: {vendor}\n"
-            f"Receipt Date: {receipt_date}\n"
-            f"Amount: {total}\n"
-            f"Items:\n{formatted_items}"
-            f"--------------------------------------------------\n"
-        )
-        gathered_log_blocks.append(log_entry)
+            if total and not str(total).startswith('$'):
+                total = f"${total}"
+                
+            item_lines = []
+            if items_list:
+                for item in items_list:
+                    if isinstance(item, dict):
+                        name = item.get('name', 'Unknown Item')
+                        price = item.get('price', '').strip()
+                        weight = item.get('weight', '').strip()
+                        
+                        price_str = f" - ${price}" if price else ""
+                        weight_str = f" ({weight})" if weight else ""
+                        item_lines.append(f"  - {name}{price_str}{weight_str}\n")
+                    else:
+                        item_lines.append(f"  - {item}\n")
+                formatted_items = "".join(item_lines)
+            else:
+                formatted_items = "  - [No Items Found]\n"
+            
+            suffix = f"_r{idx}" if len(receipts_found) > 1 else ""
+            new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}{suffix}___{filename}"
+            
+            log_entry = (
+                f"File Name: {new_filename}\n"
+                f"Category: {category}\n"
+                f"Vendor: {vendor}\n"
+                f"Receipt Date: {receipt_date}\n"
+                f"Amount: {total}\n"
+                f"Items:\n{formatted_items}"
+                f"--------------------------------------------------\n"
+            )
+            gathered_log_blocks.append(log_entry)
         
     has_success = len(gathered_log_blocks) > 0
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
