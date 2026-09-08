@@ -34,10 +34,10 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# HIGH-SPEED INBOX SWEEPER
+# HIGH-SPEED INBOX SWEEPER (WITH AUTOMATIC IMAGE DOWNSCALING)
 # =====================================================================
 def download_new_receipts():
-    """Fetches unread emails from your trusted list in memory."""
+    """Fetches unread emails from your trusted list in memory and compresses images."""
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -93,6 +93,10 @@ def download_new_receipts():
                 import io
                 image_bytes = msg.get_payload(decode=True)
                 pil_image = Image.open(io.BytesIO(image_bytes))
+                
+                # High-speed optimization: Downscale high-res images to 1280px max edge
+                pil_image.thumbnail((1280, 1280))
+                
                 attachments_in_msg.append({
                     "image_object": pil_image,
                     "original_name": f"direct_upload_{u_id}.jpg",
@@ -108,6 +112,10 @@ def download_new_receipts():
                         import io
                         image_bytes = part.get_payload(decode=True)
                         pil_image = Image.open(io.BytesIO(image_bytes))
+                        
+                        # High-speed optimization: Downscale high-res images to 1280px max edge
+                        pil_image.thumbnail((1280, 1280))
+                        
                         attachments_in_msg.append({
                             "image_object": pil_image,
                             "original_name": filename,
@@ -257,7 +265,7 @@ def process_single_email_group(args):
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
 # =====================================================================
-# PIPELINE COORDINATOR (WITH CHRONOLOGICAL DATE SORTING)
+# PIPELINE COORDINATOR (WITH HIGH CONCURRENCY WORKER POOL)
 # =====================================================================
 def process_receipts(mail_session, email_packages, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
@@ -268,7 +276,8 @@ def process_receipts(mail_session, email_packages, processed_dir):
         assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
         worker_inputs.append((package, assigned_key))
         
-    pool_workers = min(len(email_packages), 3)
+    # Increased thread pool worker limit to handle concurrent emails/attachments simultaneously
+    pool_workers = min(len(email_packages) * 2, 8)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
         futures = {executor.submit(process_single_email_group, w_in): w_in for w_in in worker_inputs}
