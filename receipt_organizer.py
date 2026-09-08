@@ -11,7 +11,7 @@ def sort_and_deduplicate_receipt_file():
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Split content by the horizontal rule separator
+    # Split content by horizontal rule separator
     raw_blocks = content.split("--------------------------------------------------")
     
     receipt_blocks = []
@@ -23,17 +23,27 @@ def sort_and_deduplicate_receipt_file():
         if not cleaned_block:
             continue
         
-        # Strip out old BATCH RUN DATE banners so they don't break block formatting
-        cleaned_block = re.sub(r"=+\nBATCH RUN DATE:[^\n]+\n=+", "", cleaned_block).strip()
+        # Clean out old BATCH RUN DATE banners
+        cleaned_block = re.sub(r"=+\s*BATCH RUN DATE:[^\n]+\s*=+", "", cleaned_block, flags=re.IGNORECASE).strip()
+        cleaned_block = re.sub(r"^\s*=+\s*$", "", cleaned_block, flags=re.MULTILINE).strip()
+        
         if not cleaned_block:
             continue
 
-        # Extract Receipt Date for sorting
-        date_match = re.search(r"Receipt Date:\s*([^\n]+)", cleaned_block)
-        
-        if date_match:
-            # Generate a normalized fingerprint based strictly on receipt content
-            fingerprint = re.sub(r"\s+", " ", cleaned_block)
+        # Extract core transaction values for duplicate checking
+        vendor = re.search(r"Vendor:\s*([^\n]+)", cleaned_block)
+        date = re.search(r"Receipt Date:\s*([^\n]+)", cleaned_block)
+        amount = re.search(r"Amount:\s*([^\n]+)", cleaned_block)
+        items = re.search(r"Items:\n([\s\S]*?)(?=\n[A-Z]|\Z)", cleaned_block)
+
+        v_str = vendor.group(1).strip().lower() if vendor else ""
+        d_str = date.group(1).strip().lower() if date else ""
+        a_str = amount.group(1).strip().lower() if amount else ""
+        i_str = re.sub(r"\s+", " ", items.group(1).strip().lower()) if items else ""
+
+        # Build a robust fingerprint using only transaction criteria (ignores File Name)
+        if d_str and (v_str or a_str):
+            fingerprint = f"{v_str}|{d_str}|{a_str}|{i_str}"
             
             if fingerprint in seen_fingerprints:
                 duplicate_count += 1
@@ -41,8 +51,8 @@ def sort_and_deduplicate_receipt_file():
             
             seen_fingerprints.add(fingerprint)
 
-            date_str = date_match.group(1).strip()
-            standard_date_match = re.search(r"\d{4}-\d{2}-\d{2}", date_str)
+            # Extract standard YYYY-MM-DD for chronological sorting
+            standard_date_match = re.search(r"\d{4}-\d{2}-\d{2}", d_str)
             sort_key = standard_date_match.group(0) if standard_date_match else "9999-99-99"
             
             receipt_blocks.append({
@@ -57,13 +67,13 @@ def sort_and_deduplicate_receipt_file():
     # Sort receipt blocks chronologically (earliest first)
     receipt_blocks.sort(key=lambda x: x["sort_key"])
 
-    # Reconstruct output cleanly
+    # Reconstruct clean file output
     sorted_content = "".join(r["text"] for r in receipt_blocks)
 
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         f.write(sorted_content)
 
-    print(f"Successfully organized {len(receipt_blocks)} unique receipt records (removed {duplicate_count} duplicates).")
+    print(f"Done: Retained {len(receipt_blocks)} unique receipt(s) (removed {duplicate_count} duplicate(s)).")
 
 if __name__ == "__main__":
     sort_and_deduplicate_receipt_file()
