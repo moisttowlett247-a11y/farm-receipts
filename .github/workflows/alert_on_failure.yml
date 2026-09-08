@@ -10,17 +10,17 @@ jobs:
   send-sms-alert:
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
+    # FIX: Explicitly inherit the repository secrets so the pipeline can access them
+    secrets: inherit
     steps:
     - name: Send Text Message Notification
       uses: dawidd6/action-send-mail@v4
       with:
-        # FIXED: Changed from "://gmail.com" to the valid Gmail SMTP server address
         server_address: smtp.gmail.com
         server_port: 465
         secure: true
         username: ${{ secrets.EMAIL_USER }}
         password: ${{ secrets.EMAIL_PASS }}
-        # Directs the carrier to route the text string straight to your mobile number
         to: ${{ secrets.NOTIFICATION_PHONE_GATEWAY }}
         from: "Farm Bot Alert"
         subject: "🚨 CRITICAL PIPELINE CRASH"
