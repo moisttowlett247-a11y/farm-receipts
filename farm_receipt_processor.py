@@ -54,7 +54,11 @@ def download_new_receipts():
         status, data = mail.uid('search', None, f'(UNSEEN SINCE "{since_date}")')
         
         if status != 'OK' or not data or not data[0]:
-            mail.logout()
+            try:
+                mail.close()
+                mail.logout()
+            except Exception:
+                pass
             return None, []
 
         email_uids = data[0].decode('utf-8').split()
@@ -125,7 +129,11 @@ def download_new_receipts():
         if saved_in_memory_images:
             return mail, saved_in_memory_images
         else:
-            mail.logout()
+            try:
+                mail.close()
+                mail.logout()
+            except Exception:
+                pass
     except Exception as e:
         print(f"Inbox processing warning/error: {e}")
     return None, []
@@ -275,7 +283,7 @@ def process_single_email_group(args):
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
 # =====================================================================
-# PIPELINE COORDINATOR
+# PIPELINE COORDINATOR (FAST IMAP TERMINATION)
 # =====================================================================
 def process_receipts(mail_session, email_packages, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
@@ -297,12 +305,6 @@ def process_receipts(mail_session, email_packages, processed_dir):
                 if result["success"]:
                     extracted_records.extend(result["blocks"])
                     mail_session.uid('store', u_id, '+FLAGS', '\\Seen')
-                    try:
-                        mail_session.create("Processed_Receipts")
-                        mail_session.uid('copy', u_id, "Processed_Receipts")
-                        mail_session.uid('store', u_id, '+FLAGS', '\\Deleted')
-                    except:
-                        pass
                 else:
                     print(f"⚠️ Total failure on UID {u_id}. Keeping unread.")
             except Exception as e:
@@ -327,8 +329,11 @@ def process_receipts(mail_session, email_packages, processed_dir):
             
         print(f"Processed and logged {len(extracted_records)} receipts.")
         
-    mail_session.expunge()
-    mail_session.logout()
+    try:
+        mail_session.close()
+        mail_session.logout()
+    except Exception:
+        pass
 
 # =====================================================================
 # MAIN ENTRY
