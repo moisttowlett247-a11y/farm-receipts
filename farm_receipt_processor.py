@@ -194,7 +194,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "   - For each item:\n"
         "     * 'name': full product description or SKU title.\n"
         "     * 'price': line item price (no currency symbols). If discounts/savings are shown below an item, record the final net price paid.\n"
-        "     * 'weight': weight, bulk measurement, or quantity (e.g., '50 lbs', '2.5 kg', '10 @ $1.50'). Return empty string if not applicable."
+        "     * 'weight': item weight or bulk weight ONLY (e.g., '50 lbs', '2.5 kg'). DO NOT place unit pricing or quantity math (e.g., '1 x $26') here; return empty string '' if no physical weight is listed."
     )
 
     payload = {
