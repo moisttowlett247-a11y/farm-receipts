@@ -6,6 +6,10 @@ import json
 from datetime import datetime
 import time
 import concurrent.futures
+import socket
+
+# Force network calls (IMAP and API requests) to time out after 30 seconds rather than hanging
+socket.setdefaulttimeout(30.0)
 
 # =====================================================================
 # CONFIGURATION & KEY MANAGER
@@ -276,7 +280,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
         assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
         worker_inputs.append((package, assigned_key))
         
-    # Increased thread pool worker limit to handle concurrent emails/attachments simultaneously
+    # High concurrency pool size to process emails and attachments in parallel
     pool_workers = min(len(email_packages) * 2, 8)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
