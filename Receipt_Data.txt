@@ -15,3 +15,20 @@ Items:
   - Tape
   - Air gauge
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-08 05:11:12
+==================================================
+File Name: Farm-General__The_Tool_Store___1000002240.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor
+  - Regal air hose
+  - Regal quick connect set
+  - Air chuck used
+  - Tape
+  - Air gauge
+--------------------------------------------------
