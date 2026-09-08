@@ -18,7 +18,7 @@ import socket
 socket.setdefaulttimeout(60.0)  # Increased timeout for slow image streams
 
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Disable PIL image size limit warnings for fast memory processing
 Image.MAX_IMAGE_PIXELS = None
@@ -110,7 +110,8 @@ def download_new_receipts():
                             if image_bytes:
                                 try:
                                     pil_image = Image.open(io.BytesIO(image_bytes))
-                                    # Increased image ceiling to 1600px for clearer OCR
+                                    # Auto-rotate phone camera orientation metadata before resizing
+                                    pil_image = ImageOps.exif_transpose(pil_image)
                                     pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                     attachments_in_msg.append({
                                         "image_object": pil_image,
@@ -124,7 +125,8 @@ def download_new_receipts():
                         if image_bytes:
                             try:
                                 pil_image = Image.open(io.BytesIO(image_bytes))
-                                # Increased image ceiling to 1600px for clearer OCR
+                                # Auto-rotate phone camera orientation metadata before resizing
+                                pil_image = ImageOps.exif_transpose(pil_image)
                                 pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                 attachments_in_msg.append({
                                     "image_object": pil_image,
@@ -162,17 +164,22 @@ def download_new_receipts():
 # THREAD-ISOLATED VISION ENGINE (DIRECT REST API WITH MULTI-RECEIPT SUPPORT)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST, handling 1 or multiple receipts dynamically."""
+    """Processes image directly over REST using Gemini 2.0 Flash."""
     buffer = io.BytesIO()
     img_obj.save(buffer, format="JPEG", quality=85)
     img_bytes = buffer.getvalue()
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
+    # Fixed valid model endpoint URL for Gemini 2.0 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={assigned_key}"
 
     prompt = (
-        "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts.\n"
+        "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts placed side-by-side or stacked.\n"
         "Extract data for EACH distinct receipt visible in the image as an object inside the 'receipts' array.\n\n"
+        "CRITICAL MULTI-RECEIPT & ANTI-DUPLICATION RULES:\n"
+        "- If multiple receipts are arranged horizontally side-by-side or in landscape photo mode, evaluate each physical paper strip as its own SEPARATE receipt.\n"
+        "- Scan strictly left-to-right (or top-to-bottom) and track distinct grand total/header boundaries to NEVER log the same physical receipt twice.\n"
+        "- Read all text according to its proper upright reading direction.\n\n"
         "CRITICAL ACCURACY RULES:\n"
         "1. VENDOR IDENTIFICATION:\n"
         "   - Identify the primary business or store name printed at the top as 'vendor'.\n"
