@@ -209,7 +209,10 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- Extract subtotal as float string (e.g., '140.00').\n"
         "- Extract sales_tax as float string (e.g., '5.50').\n"
         "- Extract total (grand total) as float string (e.g., '145.50'). Do NOT confuse subtotal with total.\n"
-        "- Extract line items into 'items' array (name, price, weight)."
+        "- Extract line items into 'items' array.\n"
+        "- MULTIPLE QUANTITIES RULE: If an item is bought in multiple quantities (e.g., 2 loaves of bread at $0.44 each), "
+        "combine them into ONE line entry. Set 'qty' to the total count (e.g., '2'), and set 'price' to the TOTAL line price (e.g., '0.88').\n"
+        "- CLEAN ITEM DESCRIPTION: Exclude store barcode numbers, UPC codes, or tax flags from the item name."
     )
 
     payload = {
@@ -248,11 +251,11 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                     "items": {
                                         "type": "OBJECT",
                                         "properties": {
-                                            "name": {"type": "STRING"},
-                                            "price": {"type": "STRING"},
-                                            "weight": {"type": "STRING"}
+                                            "name": {"type": "STRING", "description": "Clean item description without barcodes"},
+                                            "qty": {"type": "STRING", "description": "Total quantity purchased, default to '1'"},
+                                            "price": {"type": "STRING", "description": "Total combined price for this line item"}
                                         },
-                                        "required": ["name", "price", "weight"]
+                                        "required": ["name", "qty", "price"]
                                     }
                                 }
                             },
@@ -364,13 +367,14 @@ def process_single_email_group(args):
             if items_list:
                 for item in items_list:
                     if isinstance(item, dict):
-                        name = item.get('name', 'Unknown Item')
+                        name = item.get('name', 'Unknown Item').strip()
+                        qty = item.get('qty', '1').strip()
                         price = item.get('price', '').strip()
-                        weight = item.get('weight', '').strip()
 
                         price_str = f" - ${price}" if price else ""
-                        weight_str = f" ({weight})" if weight else ""
-                        item_lines.append(f"  - {name}{price_str}{weight_str}\n")
+                        qty_str = f" (Qty: {qty})" if qty and qty != '1' else ""
+
+                        item_lines.append(f"  - {name}{price_str}{qty_str}\n")
                     else:
                         item_lines.append(f"  - {item}\n")
                 formatted_items = "".join(item_lines)
