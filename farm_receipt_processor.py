@@ -15,12 +15,11 @@ from datetime import datetime
 print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
 
 import socket
-socket.setdefaulttimeout(60.0)  # Timeout protection for network connections
+socket.setdefaulttimeout(60.0)
 
 import requests
 from PIL import Image, ImageOps, ImageEnhance
 
-# Disable PIL image size limit warnings for fast memory processing
 Image.MAX_IMAGE_PIXELS = None
 
 print(f"[{time.strftime('%H:%M:%S')}] Third-party dependencies loaded.", flush=True)
@@ -46,10 +45,45 @@ def setup_folders():
     return "."
 
 # =====================================================================
+# IMAGE PREPROCESSING FOR OCR & DATES
+# =====================================================================
+def prepare_image_variants(pil_image):
+    """Prepares high-contrast full image along with top/bottom crop zooms for high-precision date OCR."""
+    pil_image = ImageOps.exif_transpose(pil_image)
+    
+    # Enhance contrast and sharpness for thermal print
+    enhancer = ImageEnhance.Contrast(pil_image)
+    enhanced_img = enhancer.enhance(1.6)
+    
+    # Resize standard full image
+    full_img = enhanced_img.copy()
+    full_img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+    
+    buffer = io.BytesIO()
+    full_img.save(buffer, format="JPEG", quality=92)
+    full_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    
+    # Crop Top 30% (Header/Date region)
+    width, height = enhanced_img.size
+    top_crop = enhanced_img.crop((0, 0, width, int(height * 0.30)))
+    top_crop.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+    buf_top = io.BytesIO()
+    top_crop.save(buf_top, format="JPEG", quality=92)
+    top_b64 = base64.b64encode(buf_top.getvalue()).decode('utf-8')
+
+    # Crop Bottom 30% (Footer/Terminal/Date region)
+    bottom_crop = enhanced_img.crop((0, int(height * 0.70), width, height))
+    bottom_crop.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+    buf_bot = io.BytesIO()
+    bottom_crop.save(buf_bot, format="JPEG", quality=92)
+    bot_b64 = base64.b64encode(buf_bot.getvalue()).decode('utf-8')
+
+    return full_b64, top_b64, bot_b64
+
+# =====================================================================
 # ROBUST IMAP ATTACHMENT STREAMER
 # =====================================================================
 def download_new_receipts():
-    """Fetches unseen emails efficiently using standard IMAP fetch with timeout protection."""
     import imaplib
 
     print(f"[{time.strftime('%H:%M:%S')}] Connecting to IMAP server...", flush=True)
@@ -59,9 +93,7 @@ def download_new_receipts():
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
         
-        # Fast search index using UNSEEN directly
         status, data = mail.uid('search', None, 'UNSEEN')
-        
         if status != 'OK' or not data or not data[0]:
             try:
                 mail.close()
@@ -75,7 +107,6 @@ def download_new_receipts():
 
         for u_id in email_uids:
             try:
-                # 1. Fetch Header first to verify sender quickly
                 status, fetch_header = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)])')
                 if status == 'OK' and fetch_header and TRUSTED_SENDERS:
                     raw_header = str(fetch_header).lower()
@@ -84,8 +115,6 @@ def download_new_receipts():
                         print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
                         continue
 
-                # 2. Fetch full payload
-                print(f"[{time.strftime('%H:%M:%S')}] Fetching payload for UID {u_id}...", flush=True)
                 status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
                 if status != 'OK' or not fetch_data:
                     continue
@@ -100,7 +129,6 @@ def download_new_receipts():
                     continue
 
                 attachments_in_msg = []
-                
                 if msg.is_multipart():
                     for part in msg.walk():
                         content_type = part.get_content_type().lower()
@@ -110,14 +138,6 @@ def download_new_receipts():
                             if image_bytes:
                                 try:
                                     pil_image = Image.open(io.BytesIO(image_bytes))
-                                    # Auto-rotate phone camera orientation metadata before resizing
-                                    pil_image = ImageOps.exif_transpose(pil_image)
-                                    
-                                    # Enhance contrast for faded thermal text readability
-                                    enhancer = ImageEnhance.Contrast(pil_image)
-                                    pil_image = enhancer.enhance(1.4)
-                                    
-                                    pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                     attachments_in_msg.append({
                                         "image_object": pil_image,
                                         "original_name": filename or f"receipt_{u_id}.jpg",
@@ -130,12 +150,6 @@ def download_new_receipts():
                         if image_bytes:
                             try:
                                 pil_image = Image.open(io.BytesIO(image_bytes))
-                                pil_image = ImageOps.exif_transpose(pil_image)
-                                
-                                enhancer = ImageEnhance.Contrast(pil_image)
-                                pil_image = enhancer.enhance(1.4)
-                                
-                                pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                 attachments_in_msg.append({
                                     "image_object": pil_image,
                                     "original_name": f"receipt_{u_id}.jpg",
@@ -169,49 +183,34 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (DIRECT REST API USING GEMINI 3.5 FLASH LITE)
+# THREAD-ISOLATED VISION ENGINE (GEMINI 3.5 FLASH LITE WITH MULTI-CROP ANALYSIS)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST using Gemini 3.5 Flash Lite with enhanced date extraction."""
-    buffer = io.BytesIO()
-    img_obj.save(buffer, format="JPEG", quality=90)
-    img_bytes = buffer.getvalue()
-    base64_image = base64.b64encode(img_bytes).decode('utf-8')
+    """Processes receipt images with dedicated high-contrast date crops for MM-DD-YYYY / MM-DD-YY accuracy."""
+    full_b64, top_b64, bot_b64 = prepare_image_variants(img_obj)
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
     prompt = (
-        "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts placed side-by-side or stacked.\n"
-        "Extract data for EACH distinct receipt visible in the image as an object inside the 'receipts' array.\n\n"
-        "CRITICAL MULTI-RECEIPT & ANTI-DUPLICATION RULES:\n"
-        "- If multiple receipts are arranged horizontally side-by-side or in landscape photo mode, evaluate each physical paper strip as its own SEPARATE receipt.\n"
-        "- Scan strictly left-to-right (or top-to-bottom) and track distinct grand total/header boundaries to NEVER log the same physical receipt twice.\n"
-        "- Read all text according to its proper upright reading direction.\n\n"
-        "CRITICAL ACCURACY RULES:\n"
-        "1. VENDOR IDENTIFICATION:\n"
-        "   - Identify the primary business or store name printed at the top as 'vendor'.\n"
-        "   - Clean up branding slogans (e.g., return 'Walmart', not 'Walmart Save Money Live Better').\n\n"
-        "2. GRAND TOTAL ACCURACY:\n"
-        "   - Look for labels like 'BALANCE DUE', 'TOTAL', 'GRAND TOTAL', or 'AMOUNT PAID'.\n"
-        "   - Do NOT select 'SUBTOTAL', 'TAX', 'CHANGE DUE', or individual item prices as the grand total.\n"
-        "   - Return ONLY the raw floating-point number string (e.g., '142.50') without currency symbols ($) or commas.\n\n"
-        "3. CATEGORIZATION:\n"
-        "   - Assign 'category' to EXACTLY one of these three options based on item content:\n"
-        "     * 'Farm:Cows' (feed, cattle equipment, vet supplies, fence posts, mineral blocks)\n"
-        "     * 'Farm:Chickens' (poultry feed, coops, heat lamps, egg cartons)\n"
-        "     * 'Farm:General' (tools, general hardware, fuel, office supplies, household goods, or mixed items)\n\n"
-        "4. STRICT HISTORICAL DATE EXTRACTION (CRITICAL):\n"
-        "   - NEVER default to or assume today's runtime date (e.g., 2026-09-08).\n"
-        "   - Read strictly the physical ink printed on paper. Check top headers, transaction lines, cashier numbers, terminal stamps, and barcode footers.\n"
-        "   - For dates like '04/26/24' or '04-26-2024', return '2024-04-26'.\n"
-        "   - If the year digit is partially blurred, cross-verify against register transaction codes or store timestamps.\n"
-        "   - If no year is legible on paper, output '[Date Not Found]' rather than inventing a date.\n\n"
-        "5. ITEMIZED LINE ITEMS:\n"
-        "   - Extract all individual purchased products into the 'items' array.\n"
-        "   - For each item:\n"
-        "     * 'name': full product description or SKU title.\n"
-        "     * 'price': line item price (no currency symbols). If discounts/savings are shown below an item, record the final net price paid.\n"
-        "     * 'weight': item weight or bulk weight ONLY (e.g., '50 lbs', '2.5 kg'). DO NOT place unit pricing or quantity math (e.g., '1 x $26') here; return empty string '' if no physical weight is listed."
+        "You are provided with three image inputs of the receipt(s):\n"
+        "1. Full receipt image.\n"
+        "2. Zoomed high-contrast crop of the TOP section (Header).\n"
+        "3. Zoomed high-contrast crop of the BOTTOM section (Footer).\n\n"
+        "CRITICAL TAX-GRADE DATE EXTRACTION INSTRUCTIONS:\n"
+        "- Dates on these receipts strictly follow US standard formatting: MM/DD/YYYY or MM/DD/YY.\n"
+        "- The FIRST number is ALWAYS the month (MM), the SECOND is the day (DD), and the THIRD is the year (YY/YYYY).\n"
+        "- Convert all extracted dates to ISO standard 'YYYY-MM-DD' for tax logs.\n"
+        "  Examples:\n"
+        "  * '04/26/24' or '04-26-2024' -> '2024-04-26'\n"
+        "  * '12/05/23' or '12-05-23' -> '2023-12-05'\n"
+        "- Record the exact line of text where the date was found into 'raw_date_text' (e.g., 'TC# 1234 04/26/24 14:15').\n"
+        "- NEVER substitute, invent, or default to execution/current year dates.\n"
+        "- If the date is completely unreadable or absent, return '[Date Not Found]'.\n\n"
+        "OTHER EXTRACTION RULES:\n"
+        "- Identify store 'vendor' name (e.g., 'Walmart').\n"
+        "- Extract grand total as float string (e.g., '145.50'). Do NOT use subtotals or tax.\n"
+        "- Assign 'category' strictly to 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+        "- Extract line items into 'items' array (name, price, weight)."
     )
 
     payload = {
@@ -219,12 +218,9 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
             {
                 "parts": [
                     {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": base64_image
-                        }
-                    }
+                    {"inline_data": {"mime_type": "image/jpeg", "data": full_b64}},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": top_b64}},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": bot_b64}}
                 ]
             }
         ],
@@ -242,10 +238,8 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "vendor": {"type": "STRING"},
                                 "total": {"type": "STRING"},
                                 "category": {"type": "STRING"},
-                                "date": {
-                                    "type": "STRING",
-                                    "description": "Historical transaction date printed on paper (YYYY-MM-DD). Do not default to execution date."
-                                },
+                                "date": {"type": "STRING"},
+                                "raw_date_text": {"type": "STRING"},
                                 "items": {
                                     "type": "ARRAY",
                                     "items": {
@@ -259,7 +253,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                     }
                                 }
                             },
-                            "required": ["vendor", "total", "category", "date", "items"]
+                            "required": ["vendor", "total", "category", "date", "raw_date_text", "items"]
                         }
                     }
                 },
@@ -273,7 +267,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     for attempt in range(max_fast_retries + 1):
         try:
             print(f"[{time.strftime('%H:%M:%S')}] Sending request to Gemini REST API...", flush=True)
-            response = requests.post(url, headers=headers, json=payload, timeout=20)
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
             response.raise_for_status()
             res_json = response.json()
             
@@ -311,9 +305,19 @@ def process_single_email_group(args):
             vendor = re.sub(r'[\\/*?:"<>|]', "", receipt.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = receipt.get('category', 'Farm:General')
             total = receipt.get('total', '[Amount Not Found]')
-            receipt_date = receipt.get('date', '[Date Not Found]')
+            extracted_date = receipt.get('date', '').strip()
+            raw_date_line = receipt.get('raw_date_text', '').strip()
             items_list = receipt.get('items', [])
             
+            # Convert MM-DD-YYYY if returned directly instead of YYYY-MM-DD
+            if re.match(r"^\d{2}-\d{2}-\d{4}$", extracted_date):
+                mm, dd, yyyy = extracted_date.split("-")
+                receipt_date = f"{yyyy}-{mm}-{dd}"
+            elif re.match(r"^\d{4}-\d{2}-\d{2}$", extracted_date):
+                receipt_date = extracted_date
+            else:
+                receipt_date = f"[VERIFY: {extracted_date or 'Date Unclear'}]"
+
             if total and not str(total).startswith('$'):
                 total = f"${total}"
                 
@@ -342,6 +346,7 @@ def process_single_email_group(args):
                 f"Category: {category}\n"
                 f"Vendor: {vendor}\n"
                 f"Receipt Date: {receipt_date}\n"
+                f"Date Source Line: {raw_date_line}\n"
                 f"Amount: {total}\n"
                 f"Items:\n{formatted_items}"
                 f"--------------------------------------------------\n"
