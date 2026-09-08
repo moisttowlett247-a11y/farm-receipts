@@ -163,7 +163,9 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),  # Minimizes reasoning overhead for high speed
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level="MINIMAL"
+                    ),
                     response_schema=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
