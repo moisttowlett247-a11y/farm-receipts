@@ -1,6 +1,3 @@
-==================================================
-BATCH RUN DATE: 2026-09-08 22:34:18
-==================================================
 File Name: Farm-General__S_&_S_Home_Center___1000002267.jpg
 Category: Farm:General
 Vendor: S & S Home Center
@@ -10,9 +7,6 @@ Amount: $716.61
 Items:
   - AIR CONDITIONER GE 18,000 W/HEAT DD061942Z - $649.99 (0.00)
 --------------------------------------------------
-==================================================
-BATCH RUN DATE: 2026-09-08 20:34:13
-==================================================
 File Name: Farm-General__Walmart_r2___1000002293.jpg
 Category: Farm:General
 Vendor: Walmart
