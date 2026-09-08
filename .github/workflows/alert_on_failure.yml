@@ -1,0 +1,27 @@
+name: Failure Alert System
+
+on:
+  workflow_run:
+    workflows: ["Run Farm Receipt Processor"]
+    types:
+      - completed
+
+jobs:
+  send-sms-alert:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Send Text Message Notification
+      uses: dawidd6/action-send-mail@v4
+      with:
+        # Corrected outbound mailing server connection points
+        server_address: ://gmail.com
+        server_port: 465
+        secure: true
+        username: ${{ secrets.EMAIL_USER }}
+        password: ${{ secrets.EMAIL_PASS }}
+        # Directs the carrier to route the text string straight to your mobile number
+        to: ${{ secrets.NOTIFICATION_PHONE_GATEWAY }}
+        from: "Farm Bot Alert"
+        subject: "🚨 CRITICAL PIPELINE CRASH"
+        body: "The Farm Receipt Processor has crashed. Check your Actions dashboard log stream to fix credential drops or syntax errors."
