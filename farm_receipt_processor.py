@@ -171,7 +171,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
     # REST endpoint configured explicitly for gemini-3.5-lite
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-lite:generateContent?key={assigned_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
     prompt = (
         "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts placed side-by-side or stacked.\n"
