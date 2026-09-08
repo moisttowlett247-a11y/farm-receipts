@@ -129,7 +129,7 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (FAST RETRIES)
+# THREAD-ISOLATED VISION ENGINE (FAST RETRIES & MINIMAL THINKING)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
     local_client = genai.Client(api_key=assigned_key)
@@ -139,9 +139,22 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
         "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
         "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
         "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
-        "5. Read the text lines and pull a list of all purchased individual products into 'items'."
+        "5. Extract all purchased individual items as an array in 'items'. For each item include:\n"
+        "   - 'name': item title or description\n"
+        "   - 'price': item cost/price (no currency symbols, or empty string if not shown)\n"
+        "   - 'weight': item weight or quantity by weight (e.g., '50 lbs', '2.5 kg', or empty string if not specified)"
     )
     
+    item_schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "name": types.Schema(type=types.Type.STRING),
+            "price": types.Schema(type=types.Type.STRING),
+            "weight": types.Schema(type=types.Type.STRING),
+        },
+        required=["name", "price", "weight"],
+    )
+
     for attempt in range(max_fast_retries + 1):
         try:
             response = local_client.models.generate_content(
@@ -150,6 +163,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),  # Minimizes reasoning overhead for high speed
                     response_schema=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
@@ -159,7 +173,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
                             "date": types.Schema(type=types.Type.STRING),
                             "items": types.Schema(
                                 type=types.Type.ARRAY,
-                                items=types.Schema(type=types.Type.STRING)
+                                items=item_schema
                             ),
                         },
                         required=["vendor", "total", "category", "date", "items"],
@@ -207,10 +221,22 @@ def process_single_email_group(args):
         if total and not str(total).startswith('$'):
             total = f"${total}"
             
-        formatted_items = (
-            "".join([f"  - {item}\n" for item in items_list])
-            if items_list else "  - [No Items Found]\n"
-        )
+        item_lines = []
+        if items_list:
+            for item in items_list:
+                if isinstance(item, dict):
+                    name = item.get('name', 'Unknown Item')
+                    price = item.get('price', '').strip()
+                    weight = item.get('weight', '').strip()
+                    
+                    price_str = f" - ${price}" if price else ""
+                    weight_str = f" ({weight})" if weight else ""
+                    item_lines.append(f"  - {name}{price_str}{weight_str}\n")
+                else:
+                    item_lines.append(f"  - {item}\n")
+            formatted_items = "".join(item_lines)
+        else:
+            formatted_items = "  - [No Items Found]\n"
         
         new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}___{filename}"
         
