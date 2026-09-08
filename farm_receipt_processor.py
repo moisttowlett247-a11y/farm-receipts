@@ -45,37 +45,39 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# IMAGE PREPROCESSING FOR OCR & DATES
+# IMAGE PREPROCESSING FOR OCR & THERMAL TEXT
 # =====================================================================
 def prepare_image_variants(pil_image):
-    """Prepares high-contrast full image along with top/bottom crop zooms for high-precision date OCR."""
+    """Prepares standard full image alongside threshold-enhanced crops for faint thermal receipt text."""
     pil_image = ImageOps.exif_transpose(pil_image)
     
-    # Enhance contrast and sharpness for thermal print
-    enhancer = ImageEnhance.Contrast(pil_image)
-    enhanced_img = enhancer.enhance(1.6)
-    
-    # Resize standard full image
-    full_img = enhanced_img.copy()
+    # Standard full image
+    full_img = pil_image.copy()
     full_img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
     
-    buffer = io.BytesIO()
-    full_img.save(buffer, format="JPEG", quality=92)
-    full_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    buf_full = io.BytesIO()
+    full_img.save(buf_full, format="JPEG", quality=92)
+    full_b64 = base64.b64encode(buf_full.getvalue()).decode('utf-8')
     
-    # Crop Top 30% (Header/Date region)
-    width, height = enhanced_img.size
-    top_crop = enhanced_img.crop((0, 0, width, int(height * 0.30)))
+    # Enhanced Grayscale Thresholding for thermal print (Top & Bottom crops)
+    def enhance_crop(crop_img):
+        gray = crop_img.convert("L")
+        enhancer = ImageEnhance.Contrast(gray)
+        enhanced = enhancer.enhance(2.5)
+        sharpener = ImageEnhance.Sharpness(enhanced)
+        return sharpener.enhance(2.0)
+
+    width, height = pil_image.size
+    top_crop = enhance_crop(pil_image.crop((0, 0, width, int(height * 0.35))))
     top_crop.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
     buf_top = io.BytesIO()
-    top_crop.save(buf_top, format="JPEG", quality=92)
+    top_crop.save(buf_top, format="JPEG", quality=95)
     top_b64 = base64.b64encode(buf_top.getvalue()).decode('utf-8')
 
-    # Crop Bottom 30% (Footer/Terminal/Date region)
-    bottom_crop = enhanced_img.crop((0, int(height * 0.70), width, height))
+    bottom_crop = enhance_crop(pil_image.crop((0, int(height * 0.65), width, height)))
     bottom_crop.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
     buf_bot = io.BytesIO()
-    bottom_crop.save(buf_bot, format="JPEG", quality=92)
+    bottom_crop.save(buf_bot, format="JPEG", quality=95)
     bot_b64 = base64.b64encode(buf_bot.getvalue()).decode('utf-8')
 
     return full_b64, top_b64, bot_b64
@@ -186,7 +188,7 @@ def download_new_receipts():
 # THREAD-ISOLATED VISION ENGINE (GEMINI 3.5 FLASH LITE WITH MULTI-CROP ANALYSIS)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes receipt images with dedicated high-contrast date crops and explicit digit separation."""
+    """Processes receipt images with high-contrast date crops and strict cross-verification."""
     full_b64, top_b64, bot_b64 = prepare_image_variants(img_obj)
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
@@ -194,18 +196,17 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     prompt = (
         "You are provided with three image inputs of the receipt(s):\n"
         "1. Full receipt image.\n"
-        "2. Zoomed high-contrast crop of the TOP section (Header).\n"
-        "3. Zoomed high-contrast crop of the BOTTOM section (Footer).\n\n"
-        "CRITICAL TAX-GRADE DATE EXTRACTION INSTRUCTIONS:\n"
-        "- Locate the printed transaction date in the header or footer.\n"
-        "- Receipt dates strictly follow US standard formatting: MM/DD/YY or MM/DD/YYYY.\n"
-        "- The FIRST number is ALWAYS the month (1-12).\n"
-        "- The SECOND number is ALWAYS the day (1-31).\n"
-        "- The THIRD number is ALWAYS the year (2-digit or 4-digit, e.g., '26' means 2026, '24' means 2024).\n"
-        "- Check for thermal ink distortion: Faded or light loop digits like '08' can look like '09' or '00'. Examine pixel boundaries carefully before outputting digits.\n"
-        "- Extract the exact raw text line where the date appears into 'raw_date_text' (e.g., '08/24/26').\n"
-        "- Return the extracted numbers strictly as individual string values for 'month', 'day', and 'year'. Do NOT swap digits.\n"
-        "- If the date is unreadable or absent, return empty strings for month, day, year.\n\n"
+        "2. High-contrast threshold crop of the TOP section (Header).\n"
+        "3. High-contrast threshold crop of the BOTTOM section (Footer).\n\n"
+        "DATE EXTRACTION & CROSS-VERIFICATION INSTRUCTIONS:\n"
+        "- Receipts are dated 2025 or later.\n"
+        "- Locate the printed transaction timestamp on the receipt (Header or Footer).\n"
+        "- Standard US date format: MM/DD/YY or MM/DD/YYYY.\n"
+        "- Month is 01-12, Day is 01-31, Year is 2025 or later (e.g., '25' = 2025, '26' = 2026).\n"
+        "- THERMAL DISTORTION CHECK: Thermal printing often blurs '8' into '9' or '0'. Carefully inspect the loops on the high-contrast crops before choosing digits.\n"
+        "- CROSS-CHECK: Verify the date against receipt transaction lines (e.g., 'ST# ... TE# ... 08/24/25').\n"
+        "- Extract raw_date_text exactly as printed (e.g., '08/24/25'). Do NOT swap month/day positions.\n"
+        "- Return month, day, and 4-digit year as separate strings.\n\n"
         "OTHER EXTRACTION RULES:\n"
         "- Identify store 'vendor' name (e.g., 'Walmart').\n"
         "- Extract grand total as float string (e.g., '145.50'). Do NOT use subtotals or tax.\n"
@@ -240,7 +241,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "category": {"type": "STRING"},
                                 "month": {"type": "STRING", "description": "2-digit month e.g. '08'"},
                                 "day": {"type": "STRING", "description": "2-digit day e.g. '24'"},
-                                "year": {"type": "STRING", "description": "2-digit or 4-digit year e.g. '26' or '2026'"},
+                                "year": {"type": "STRING", "description": "4-digit year e.g. '2025' or '2026'"},
                                 "raw_date_text": {"type": "STRING"},
                                 "items": {
                                     "type": "ARRAY",
@@ -310,29 +311,41 @@ def process_single_email_group(args):
             raw_date_line = receipt.get('raw_date_text', '').strip()
             items_list = receipt.get('items', [])
             
-            # 1. Attempt regex extraction directly from raw printed text line
+            # --- MULTI-YEAR DATE EXTRACTION & VALIDATION ENGINE ---
+            receipt_date = None
+
+            # Attempt 1: Regex parse from raw text string
             regex_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', raw_date_line)
 
             if regex_match:
                 m_str, d_str, y_str = regex_match.groups()
-                month = m_str.zfill(2)
-                day = d_str.zfill(2)
-                year = y_str
-                if len(year) == 2:
-                    year = f"20{year}"
-                receipt_date = f"{year}-{month}-{day}"
-            else:
-                # 2. Fall back to structured LLM fields
-                month = receipt.get('month', '').strip().zfill(2)
-                day = receipt.get('day', '').strip().zfill(2)
-                year = receipt.get('year', '').strip()
-                if len(year) == 2:
-                    year = f"20{year}"
+                m_int, d_int = int(m_str), int(d_str)
+                
+                if len(y_str) == 2:
+                    y_str = f"20{y_str}"
+                y_int = int(y_str)
 
-                if month and day and len(year) == 4 and month.isdigit() and day.isdigit() and year.isdigit():
-                    receipt_date = f"{year}-{month}-{day}"
-                else:
-                    receipt_date = f"[VERIFY: {raw_date_line or 'Date Unclear'}]"
+                # Validate month (1-12), day (1-31), year (2025+)
+                if 1 <= m_int <= 12 and 1 <= d_int <= 31 and 2025 <= y_int <= 2030:
+                    receipt_date = f"{y_str}-{m_str.zfill(2)}-{d_str.zfill(2)}"
+
+            # Attempt 2: Fall back to structured JSON model fields
+            if not receipt_date:
+                m_str = receipt.get('month', '').strip().zfill(2)
+                d_str = receipt.get('day', '').strip().zfill(2)
+                y_str = receipt.get('year', '').strip()
+
+                if len(y_str) == 2:
+                    y_str = f"20{y_str}"
+
+                if m_str.isdigit() and d_str.isdigit() and y_str.isdigit():
+                    m_int, d_int, y_int = int(m_str), int(d_str), int(y_str)
+                    if 1 <= m_int <= 12 and 1 <= d_int <= 31 and 2025 <= y_int <= 2030:
+                        receipt_date = f"{y_str}-{m_str.zfill(2)}-{d_str.zfill(2)}"
+
+            # Safety fallback for unparseable dates
+            if not receipt_date:
+                receipt_date = f"[VERIFY DATE: {raw_date_line or 'Unclear'}]"
 
             if total and not str(total).startswith('$'):
                 total = f"${total}"
