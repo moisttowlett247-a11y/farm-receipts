@@ -1,0 +1,15 @@
+name: Auto Cancel Stuck Runs
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Checks your repository queue every 30 minutes
+
+jobs:
+  cancel-stuck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel Past Stuck Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+        with:
+          workflow_id: all
+          all_but_latest: true # Instantly kills older frozen jobs so fresh runs can execute
