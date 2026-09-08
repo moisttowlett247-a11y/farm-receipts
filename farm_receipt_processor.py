@@ -202,7 +202,8 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- The FIRST number is ALWAYS the month (1-12).\n"
         "- The SECOND number is ALWAYS the day (1-31).\n"
         "- The THIRD number is ALWAYS the year (2-digit or 4-digit, e.g., '26' means 2026, '24' means 2024).\n"
-        "- Extract the exact raw text line where the date appears into 'raw_date_text' (e.g., '06/24/26').\n"
+        "- Check for thermal ink distortion: Faded or light loop digits like '08' can look like '09' or '00'. Examine pixel boundaries carefully before outputting digits.\n"
+        "- Extract the exact raw text line where the date appears into 'raw_date_text' (e.g., '08/24/26').\n"
         "- Return the extracted numbers strictly as individual string values for 'month', 'day', and 'year'. Do NOT swap digits.\n"
         "- If the date is unreadable or absent, return empty strings for month, day, year.\n\n"
         "OTHER EXTRACTION RULES:\n"
@@ -237,7 +238,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "vendor": {"type": "STRING"},
                                 "total": {"type": "STRING"},
                                 "category": {"type": "STRING"},
-                                "month": {"type": "STRING", "description": "2-digit month e.g. '06'"},
+                                "month": {"type": "STRING", "description": "2-digit month e.g. '08'"},
                                 "day": {"type": "STRING", "description": "2-digit day e.g. '24'"},
                                 "year": {"type": "STRING", "description": "2-digit or 4-digit year e.g. '26' or '2026'"},
                                 "raw_date_text": {"type": "STRING"},
@@ -306,20 +307,32 @@ def process_single_email_group(args):
             vendor = re.sub(r'[\\/*?:"<>|]', "", receipt.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = receipt.get('category', 'Farm:General')
             total = receipt.get('total', '[Amount Not Found]')
-            
-            month = receipt.get('month', '').strip().zfill(2)
-            day = receipt.get('day', '').strip().zfill(2)
-            year = receipt.get('year', '').strip()
             raw_date_line = receipt.get('raw_date_text', '').strip()
             items_list = receipt.get('items', [])
             
-            if len(year) == 2:
-                year = f"20{year}"
+            # 1. Attempt regex extraction directly from raw printed text line
+            regex_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', raw_date_line)
 
-            if month and day and len(year) == 4 and month.isdigit() and day.isdigit() and year.isdigit():
+            if regex_match:
+                m_str, d_str, y_str = regex_match.groups()
+                month = m_str.zfill(2)
+                day = d_str.zfill(2)
+                year = y_str
+                if len(year) == 2:
+                    year = f"20{year}"
                 receipt_date = f"{year}-{month}-{day}"
             else:
-                receipt_date = f"[VERIFY: {raw_date_line or 'Date Unclear'}]"
+                # 2. Fall back to structured LLM fields
+                month = receipt.get('month', '').strip().zfill(2)
+                day = receipt.get('day', '').strip().zfill(2)
+                year = receipt.get('year', '').strip()
+                if len(year) == 2:
+                    year = f"20{year}"
+
+                if month and day and len(year) == 4 and month.isdigit() and day.isdigit() and year.isdigit():
+                    receipt_date = f"{year}-{month}-{day}"
+                else:
+                    receipt_date = f"[VERIFY: {raw_date_line or 'Date Unclear'}]"
 
             if total and not str(total).startswith('$'):
                 total = f"${total}"
