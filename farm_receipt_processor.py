@@ -129,46 +129,53 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (NO RE-TRY DELAY HANGS)
+# THREAD-ISOLATED VISION ENGINE (FAST 503 RETRIES)
 # =====================================================================
-def analyze_image_with_gemini(img_obj, assigned_key):
+def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
     local_client = genai.Client(api_key=assigned_key)
-    try:
-        prompt = (
-            "Analyze this receipt image and extract data into a strict JSON layout.\n"
-            "1. Identify the store name as 'vendor'.\n"
-            "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
-            "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-            "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
-            "5. Read the text lines and pull a list of all purchased individual products into 'items'."
-        )
-        
-        response = local_client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=[img_obj, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0,
-                response_schema=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "vendor": types.Schema(type=types.Type.STRING),
-                        "total": types.Schema(type=types.Type.STRING),
-                        "category": types.Schema(type=types.Type.STRING),
-                        "date": types.Schema(type=types.Type.STRING),
-                        "items": types.Schema(
-                            type=types.Type.ARRAY,
-                            items=types.Schema(type=types.Type.STRING)
-                        ),
-                    },
-                    required=["vendor", "total", "category", "date", "items"],
+    prompt = (
+        "Analyze this receipt image and extract data into a strict JSON layout.\n"
+        "1. Identify the store name as 'vendor'.\n"
+        "2. Find the final mathematical grand total amount as 'total' (no currency symbols).\n"
+        "3. Categorize the transaction into 'category' matching exactly: 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+        "4. Identify the transaction or purchase date printed on the receipt as 'date' (format as YYYY-MM-DD if clear, otherwise extract text string).\n"
+        "5. Read the text lines and pull a list of all purchased individual products into 'items'."
+    )
+    
+    for attempt in range(max_fast_retries + 1):
+        try:
+            response = local_client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=[img_obj, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0,
+                    response_schema=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "vendor": types.Schema(type=types.Type.STRING),
+                            "total": types.Schema(type=types.Type.STRING),
+                            "category": types.Schema(type=types.Type.STRING),
+                            "date": types.Schema(type=types.Type.STRING),
+                            "items": types.Schema(
+                                type=types.Type.ARRAY,
+                                items=types.Schema(type=types.Type.STRING)
+                            ),
+                        },
+                        required=["vendor", "total", "category", "date", "items"],
+                    ),
                 ),
-            ),
-        )
-        return json.loads(response.text.strip())
-    except Exception as e:
-        print(f"Cloud server drop (Skipping write layout block): {e}")
-        return None
+            )
+            return json.loads(response.text.strip())
+        except Exception as e:
+            err_str = str(e)
+            if "503" in err_str and attempt < max_fast_retries:
+                wait_time = (attempt + 1) * 2  # 2s on first attempt, 4s on second
+                print(f"⚡ 503 micro-spike hit. Fast retry in {wait_time}s (Attempt {attempt + 1}/{max_fast_retries})...")
+                time.sleep(wait_time)
+            else:
+                print(f"Cloud server drop (Skipping write layout block): {e}")
+                return None
 
 # =====================================================================
 # INDEPENDENT WORKER SCOPE ROUTER
