@@ -145,7 +145,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
     for attempt in range(max_fast_retries + 1):
         try:
             response = local_client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
