@@ -15,10 +15,10 @@ from datetime import datetime
 print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
 
 import socket
-socket.setdefaulttimeout(60.0)  # Increased timeout for slow image streams
+socket.setdefaulttimeout(60.0)  # Timeout protection for network connections
 
 import requests
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance
 
 # Disable PIL image size limit warnings for fast memory processing
 Image.MAX_IMAGE_PIXELS = None
@@ -112,6 +112,11 @@ def download_new_receipts():
                                     pil_image = Image.open(io.BytesIO(image_bytes))
                                     # Auto-rotate phone camera orientation metadata before resizing
                                     pil_image = ImageOps.exif_transpose(pil_image)
+                                    
+                                    # Enhance contrast for faded thermal text readability
+                                    enhancer = ImageEnhance.Contrast(pil_image)
+                                    pil_image = enhancer.enhance(1.4)
+                                    
                                     pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                     attachments_in_msg.append({
                                         "image_object": pil_image,
@@ -125,8 +130,11 @@ def download_new_receipts():
                         if image_bytes:
                             try:
                                 pil_image = Image.open(io.BytesIO(image_bytes))
-                                # Auto-rotate phone camera orientation metadata before resizing
                                 pil_image = ImageOps.exif_transpose(pil_image)
+                                
+                                enhancer = ImageEnhance.Contrast(pil_image)
+                                pil_image = enhancer.enhance(1.4)
+                                
                                 pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                 attachments_in_msg.append({
                                     "image_object": pil_image,
@@ -164,9 +172,9 @@ def download_new_receipts():
 # THREAD-ISOLATED VISION ENGINE (DIRECT REST API USING GEMINI 3.5 FLASH LITE)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST using Gemini 3.5 Flash Lite."""
+    """Processes image directly over REST using Gemini 3.5 Flash Lite with enhanced date extraction."""
     buffer = io.BytesIO()
-    img_obj.save(buffer, format="JPEG", quality=85)
+    img_obj.save(buffer, format="JPEG", quality=90)
     img_bytes = buffer.getvalue()
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
@@ -192,11 +200,12 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "     * 'Farm:Cows' (feed, cattle equipment, vet supplies, fence posts, mineral blocks)\n"
         "     * 'Farm:Chickens' (poultry feed, coops, heat lamps, egg cartons)\n"
         "     * 'Farm:General' (tools, general hardware, fuel, office supplies, household goods, or mixed items)\n\n"
-        "4. DATE EXTRACTION & OCR PRECISION:\n"
-        "   - Extract the exact printed transaction date as 'date' (preferred format: YYYY-MM-DD).\n"
-        "   - DO NOT default to or assume the current year. Read strictly from the physical text printed on the receipt.\n"
-        "   - CAUTION ON YEAR DIGITS: Check register lines, approval stamps, terminal numbers, and bottom footer timestamps to cross-verify the year (e.g., 2024 vs 2026).\n"
-        "   - CAUTION ON DATE FORMATS: Convert 'MM/DD/YY' accurately (e.g., '04/26/24' -> '2024-04-26'). If ambiguous, keep the exact printed text rather than inferring missing digits.\n\n"
+        "4. STRICT HISTORICAL DATE EXTRACTION (CRITICAL):\n"
+        "   - NEVER default to or assume today's runtime date (e.g., 2026-09-08).\n"
+        "   - Read strictly the physical ink printed on paper. Check top headers, transaction lines, cashier numbers, terminal stamps, and barcode footers.\n"
+        "   - For dates like '04/26/24' or '04-26-2024', return '2024-04-26'.\n"
+        "   - If the year digit is partially blurred, cross-verify against register transaction codes or store timestamps.\n"
+        "   - If no year is legible on paper, output '[Date Not Found]' rather than inventing a date.\n\n"
         "5. ITEMIZED LINE ITEMS:\n"
         "   - Extract all individual purchased products into the 'items' array.\n"
         "   - For each item:\n"
@@ -233,7 +242,10 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "vendor": {"type": "STRING"},
                                 "total": {"type": "STRING"},
                                 "category": {"type": "STRING"},
-                                "date": {"type": "STRING"},
+                                "date": {
+                                    "type": "STRING",
+                                    "description": "Historical transaction date printed on paper (YYYY-MM-DD). Do not default to execution date."
+                                },
                                 "items": {
                                     "type": "ARRAY",
                                     "items": {
