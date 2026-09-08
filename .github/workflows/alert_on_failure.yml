@@ -10,8 +10,10 @@ jobs:
   send-sms-alert:
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
-    # FIX: Explicitly inherit the repository secrets so the pipeline can access them
-    secrets: inherit
+    # This explicitly permits the workflow runner to look up environment details
+    permissions:
+      actions: read
+      contents: read
     steps:
     - name: Send Text Message Notification
       uses: dawidd6/action-send-mail@v4
