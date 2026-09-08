@@ -47,7 +47,7 @@ def setup_folders():
 # HIGH-SPEED IMAP STREAMER & DOWNSCALER
 # =====================================================================
 def download_new_receipts():
-    """Fetches headers + structure in a single batched IMAP request."""
+    """Fetches unseen emails, validates sender/attachments, and extracts image payloads."""
     import imaplib
     import email
 
@@ -73,42 +73,31 @@ def download_new_receipts():
         email_uids = data[0].decode('utf-8').split()
         print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s).", flush=True)
         
-        # Batch fetch Headers AND Bodystructure together in 1 network trip
-        uid_sequence = ",".join(email_uids)
-        status, batch_data = mail.uid('fetch', uid_sequence, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
-        
-        if status != 'OK' or not batch_data:
-            try:
-                mail.close()
-                mail.logout()
-            except Exception:
-                pass
-            return None, []
-
-        # Parse batch response map: { uid: {"from": str, "has_image": bool} }
         candidate_uids = []
-        current_uid = None
-        
-        for item in batch_data:
-            if isinstance(item, tuple):
-                header_info = item[0].decode('utf-8', errors='ignore')
-                # Extract UID from response line
-                uid_match = re.search(r'UID\s+(\d+)', header_info, re.IGNORECASE)
-                if uid_match:
-                    current_uid = uid_match.group(1)
-                
-                content_text = item[1].decode('utf-8', errors='ignore').lower() if isinstance(item[1], bytes) else str(item[1]).lower()
-                
-                # Check trusted sender
-                sender_ok = True
-                if TRUSTED_SENDERS:
-                    sender_ok = any(sender in content_text for sender in TRUSTED_SENDERS)
-                
-                # Check image indicator in structure/headers
-                has_image = any(ext in content_text for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
-                
-                if current_uid and sender_ok and has_image:
-                    candidate_uids.append(current_uid)
+        for u_id in email_uids:
+            # Check Header + Structure per UID
+            status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
+            if status != 'OK' or not fetch_info:
+                continue
+
+            raw_response = str(fetch_info).lower()
+            
+            # Check 1: Trusted Sender Verification
+            if TRUSTED_SENDERS:
+                sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
+                if not sender_matched:
+                    print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
+                    continue
+
+            # Check 2: Image Attachment Verification
+            has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
+            if not has_image:
+                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image attachment found in structure.", flush=True)
+                continue
+
+            candidate_uids.append(u_id)
+
+        print(f"[{time.strftime('%H:%M:%S')}] {len(candidate_uids)} email(s) passed filters. Downloading payloads...", flush=True)
 
         # Download full bodies ONLY for matching candidate UIDs
         for u_id in candidate_uids:
