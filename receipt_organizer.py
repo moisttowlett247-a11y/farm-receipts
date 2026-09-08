@@ -11,8 +11,8 @@ def sort_and_deduplicate_receipt_file():
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Split content by horizontal rule separator
-    raw_blocks = content.split("--------------------------------------------------")
+    # Split content by the standard 50-dash horizontal rule separator
+    raw_blocks = re.split(r"-{50,}", content)
     
     receipt_blocks = []
     seen_fingerprints = set()
@@ -23,26 +23,26 @@ def sort_and_deduplicate_receipt_file():
         if not cleaned_block:
             continue
         
-        # Clean out old BATCH RUN DATE banners and equality separators
+        # Clean out batch run header banners and equality separators
         cleaned_block = re.sub(r"=+\s*BATCH RUN DATE:[^\n]+\s*=+", "", cleaned_block, flags=re.IGNORECASE).strip()
         cleaned_block = re.sub(r"^\s*=+\s*$", "", cleaned_block, flags=re.MULTILINE).strip()
         
         if not cleaned_block:
             continue
 
-        # Extract core transaction values
-        vendor = re.search(r"Vendor:\s*([^\n]+)", cleaned_block)
-        date = re.search(r"Receipt Date:\s*([^\n]+)", cleaned_block)
-        amount = re.search(r"Amount:\s*([^\n]+)", cleaned_block)
+        # Extract core transaction values for duplicate identification
+        vendor_match = re.search(r"^Vendor:\s*([^\n]+)", cleaned_block, re.MULTILINE)
+        date_match = re.search(r"^Receipt Date:\s*([^\n]+)", cleaned_block, re.MULTILINE)
+        amount_match = re.search(r"^Amount:\s*([^\n]+)", cleaned_block, re.MULTILINE)
 
-        v_str = vendor.group(1).strip().lower() if vendor else ""
-        d_str = date.group(1).strip().lower() if date else ""
-        a_str = amount.group(1).strip().lower() if amount else ""
+        v_str = vendor_match.group(1).strip().lower() if vendor_match else ""
+        d_str = date_match.group(1).strip().lower() if date_match else ""
+        a_str = amount_match.group(1).strip().lower() if amount_match else ""
 
-        # Normalize amount to numbers only (e.g., '$145.50' -> '145.50')
+        # Normalize amount to strictly numbers and decimals (e.g., '$145.50' -> '145.50')
         a_clean = re.sub(r"[^\d.]", "", a_str)
 
-        # Build fingerprint strictly from Vendor + Date + Amount
+        # Build fingerprint strictly from Vendor + Date + Grand Total
         if d_str and a_clean:
             fingerprint = f"{v_str}|{d_str}|{a_clean}"
             
