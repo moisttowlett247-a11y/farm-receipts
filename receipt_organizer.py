@@ -23,27 +23,28 @@ def sort_and_deduplicate_receipt_file():
         if not cleaned_block:
             continue
         
-        # Clean out old BATCH RUN DATE banners
+        # Clean out old BATCH RUN DATE banners and equality separators
         cleaned_block = re.sub(r"=+\s*BATCH RUN DATE:[^\n]+\s*=+", "", cleaned_block, flags=re.IGNORECASE).strip()
         cleaned_block = re.sub(r"^\s*=+\s*$", "", cleaned_block, flags=re.MULTILINE).strip()
         
         if not cleaned_block:
             continue
 
-        # Extract core transaction values for duplicate checking
+        # Extract core transaction values
         vendor = re.search(r"Vendor:\s*([^\n]+)", cleaned_block)
         date = re.search(r"Receipt Date:\s*([^\n]+)", cleaned_block)
         amount = re.search(r"Amount:\s*([^\n]+)", cleaned_block)
-        items = re.search(r"Items:\n([\s\S]*?)(?=\n[A-Z]|\Z)", cleaned_block)
 
         v_str = vendor.group(1).strip().lower() if vendor else ""
         d_str = date.group(1).strip().lower() if date else ""
         a_str = amount.group(1).strip().lower() if amount else ""
-        i_str = re.sub(r"\s+", " ", items.group(1).strip().lower()) if items else ""
 
-        # Build a robust fingerprint using only transaction criteria (ignores File Name)
-        if d_str and (v_str or a_str):
-            fingerprint = f"{v_str}|{d_str}|{a_str}|{i_str}"
+        # Normalize amount to numbers only (e.g., '$145.50' -> '145.50')
+        a_clean = re.sub(r"[^\d.]", "", a_str)
+
+        # Build fingerprint strictly from Vendor + Date + Amount
+        if d_str and a_clean:
+            fingerprint = f"{v_str}|{d_str}|{a_clean}"
             
             if fingerprint in seen_fingerprints:
                 duplicate_count += 1
@@ -64,7 +65,7 @@ def sort_and_deduplicate_receipt_file():
         print("No receipt entries found to process.")
         return
 
-    # Sort receipt blocks chronologically (earliest first)
+    # Sort receipt blocks chronologically (earliest date first)
     receipt_blocks.sort(key=lambda x: x["sort_key"])
 
     # Reconstruct clean file output
