@@ -47,7 +47,7 @@ def setup_folders():
 # HIGH-SPEED IMAP STREAMER & DOWNSCALER
 # =====================================================================
 def download_new_receipts():
-    """Fetches and downscales image attachments using targeted IMAP fetches."""
+    """Fetches attachments using targeted IMAP BODYSTRUCTURE inspection."""
     import imaplib
     import email
 
@@ -58,8 +58,8 @@ def download_new_receipts():
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
         
-        # Fast-path IMAP search restricted to unseen emails from the last 7 days
-        since_date = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
+        # Fast search: Check unseen emails from yesterday onward only
+        since_date = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
         status, data = mail.uid('search', None, f'(UNSEEN SINCE "{since_date}")')
         
         if status != 'OK' or not data or not data[0]:
@@ -88,7 +88,16 @@ def download_new_receipts():
             if TRUSTED_SENDERS and not any(sender in header_text for sender in TRUSTED_SENDERS):
                 continue
 
-            # Step 2: Fetch Body Stream
+            # Step 2: Structure Check - avoids downloading non-image email payloads
+            status, struct_data = mail.uid('fetch', u_id, '(BODYSTRUCTURE)')
+            if status != 'OK' or not struct_data or not struct_data[0]:
+                continue
+
+            struct_str = str(struct_data[0]).lower()
+            if not any(ext in struct_str for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/']):
+                continue
+
+            # Step 3: Fetch Full Body stream only after image confirmation
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
@@ -104,7 +113,6 @@ def download_new_receipts():
                 
             attachments_in_msg = []
             
-            # Fast extraction for single-part or multipart messages
             if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
