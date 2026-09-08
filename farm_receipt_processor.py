@@ -45,81 +45,10 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# ULTRA-FAST DIRECT ATTACHMENT STREAMER
+# SINGLE-SESSION DIRECT ATTACHMENT STREAMER
 # =====================================================================
-def fetch_attachment_for_uid(u_id):
-    """Directly fetches image parts using IMAP BODYSTRUCTURE, bypassing full email parsing."""
-    import imaplib
-
-    attachments_in_msg = []
-    try:
-        mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-        mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("INBOX")
-
-        # 1. Inspect Header + Structure
-        status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
-        if status != 'OK' or not fetch_info:
-            mail.logout()
-            return None
-
-        raw_response = str(fetch_info).lower()
-
-        # Sender Filter
-        if TRUSTED_SENDERS:
-            sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
-            if not sender_matched:
-                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
-                mail.logout()
-                return None
-
-        # Parse part numbers for image attachments from BODYSTRUCTURE
-        # Typical structure returned: ("IMAGE" "JPEG" ... ) or part identifiers like 2, 2.1
-        bs_str = str(fetch_info[0]) if fetch_info and len(fetch_info) > 0 else ""
-        part_matches = re.findall(r'\(("IMAGE"|"APPLICATION")\s+"(JPEG|PNG|WEBP|HEIC|JPG)"', bs_str, re.IGNORECASE)
-
-        if not part_matches:
-            # Fallback: check if the whole email is a single raw image
-            has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
-            if not has_image:
-                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image found.", flush=True)
-                mail.logout()
-                return None
-            target_parts = ['1']
-        else:
-            # Extract section numbers (e.g. BODY[2] or BODY[2.1])
-            sections = re.findall(r'(\d+(?:\.\d+)*)\s+\("IMAGE"', bs_str, re.IGNORECASE)
-            target_parts = sections if sections else ['2', '1.2', '1']
-
-        # 2. Fetch raw image bytes directly for target sections
-        for section in target_parts:
-            status, img_data = mail.uid('fetch', u_id, f'(BODY.PEEK[{section}])')
-            if status == 'OK' and img_data and isinstance(img_data[0], tuple):
-                raw_bytes = img_data[0][1]
-                if raw_bytes and len(raw_bytes) > 100:
-                    try:
-                        pil_image = Image.open(io.BytesIO(raw_bytes))
-                        pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-                        attachments_in_msg.append({
-                            "image_object": pil_image,
-                            "original_name": f"receipt_{u_id}_{section}.jpg",
-                        })
-                        break # Successfully got primary attachment
-                    except Exception:
-                        continue
-
-        mail.logout()
-
-        if attachments_in_msg:
-            return {"u_id": u_id, "attachments": attachments_in_msg}
-
-    except Exception as e:
-        print(f"[{time.strftime('%H:%M:%S')}] Attachment fetch error for UID {u_id}: {e}", flush=True)
-
-    return None
-
 def download_new_receipts():
-    """Fetches unseen emails and streams image attachments in parallel."""
+    """Fetches unseen emails using a single IMAP connection to avoid connection throttling."""
     import imaplib
 
     print(f"[{time.strftime('%H:%M:%S')}] Connecting to IMAP server...", flush=True)
@@ -141,14 +70,64 @@ def download_new_receipts():
             return None, []
 
         email_uids = data[0].decode('utf-8').split()
-        print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s). Downloading attachments in parallel...", flush=True)
+        print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s). Processing attachments...", flush=True)
 
-        if email_uids:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(email_uids), 5)) as executor:
-                results = executor.map(fetch_attachment_for_uid, email_uids)
-                for res in results:
-                    if res:
-                        saved_in_memory_images.append(res)
+        for u_id in email_uids:
+            try:
+                # 1. Fetch Header + Structure
+                status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
+                if status != 'OK' or not fetch_info:
+                    continue
+
+                raw_response = str(fetch_info).lower()
+
+                # Trusted Sender Check
+                if TRUSTED_SENDERS:
+                    sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
+                    if not sender_matched:
+                        print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
+                        continue
+
+                # Locate image section numbers from BODYSTRUCTURE
+                bs_str = str(fetch_info[0]) if fetch_info and len(fetch_info) > 0 else ""
+                sections = re.findall(r'(\d+(?:\.\d+)*)\s+\("IMAGE"', bs_str, re.IGNORECASE)
+                
+                if not sections:
+                    # Check fallback structures if no explicit IMAGE part tag is indexed
+                    has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
+                    if not has_image:
+                        print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image attachment found.", flush=True)
+                        continue
+                    target_parts = ['1', '2']
+                else:
+                    target_parts = sections
+
+                attachments_in_msg = []
+
+                # 2. Extract raw image payload directly
+                for section in target_parts:
+                    status, img_data = mail.uid('fetch', u_id, f'(BODY.PEEK[{section}])')
+                    if status == 'OK' and img_data and isinstance(img_data[0], tuple):
+                        raw_bytes = img_data[0][1]
+                        if raw_bytes and len(raw_bytes) > 100:
+                            try:
+                                pil_image = Image.open(io.BytesIO(raw_bytes))
+                                pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                                attachments_in_msg.append({
+                                    "image_object": pil_image,
+                                    "original_name": f"receipt_{u_id}_{section}.jpg",
+                                })
+                                break
+                            except Exception:
+                                continue
+
+                if attachments_in_msg:
+                    saved_in_memory_images.append({
+                        "u_id": u_id,
+                        "attachments": attachments_in_msg,
+                    })
+            except Exception as uid_err:
+                print(f"[{time.strftime('%H:%M:%S')}] Error processing UID {u_id}: {uid_err}", flush=True)
 
         if saved_in_memory_images:
             return mail, saved_in_memory_images
