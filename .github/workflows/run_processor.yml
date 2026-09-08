@@ -1,24 +1,18 @@
-name: Run Farm Receipt Processor
+name: Process and Organize Farm Receipts
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
-
-permissions:
-  contents: write
+    # Runs hourly
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
-  run-script:
+  process-and-organize:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository code
-        uses: actions/checkout@v4
 
-      - name: Create requirements file for caching
-        run: |
-          echo "pillow" > requirements.txt
-          echo "requests" >> requirements.txt
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,12 +20,12 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --quiet -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Execute Automation Script
+      - name: Run Receipt Ingestion Processor
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
@@ -39,13 +33,14 @@ jobs:
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           TRUSTED_SENDERS: ${{ secrets.TRUSTED_SENDERS }}
-          PYTHONUNBUFFERED: "1"
         run: python farm_receipt_processor.py
 
-      - name: Commit and Push Changes
+      - name: Sort Receipts Chronologically
+        run: python receipt_organizer.py
+
+      - name: Commit and Push Updated Receipt Data
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add .
-          git diff-index --quiet HEAD || git commit -m "Auto-update processed receipts log"
-          git push
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add Receipt_Data.txt
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Process and chronologically sort receipts" && git push)
