@@ -186,7 +186,7 @@ def download_new_receipts():
 # THREAD-ISOLATED VISION ENGINE (GEMINI 3.5 FLASH LITE WITH MULTI-CROP ANALYSIS)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes receipt images with dedicated high-contrast date crops for MM-DD-YYYY / MM-DD-YY accuracy."""
+    """Processes receipt images with dedicated high-contrast date crops and explicit digit separation."""
     full_b64, top_b64, bot_b64 = prepare_image_variants(img_obj)
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
@@ -197,15 +197,14 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "2. Zoomed high-contrast crop of the TOP section (Header).\n"
         "3. Zoomed high-contrast crop of the BOTTOM section (Footer).\n\n"
         "CRITICAL TAX-GRADE DATE EXTRACTION INSTRUCTIONS:\n"
-        "- Dates on these receipts strictly follow US standard formatting: MM/DD/YYYY or MM/DD/YY.\n"
-        "- The FIRST number is ALWAYS the month (MM), the SECOND is the day (DD), and the THIRD is the year (YY/YYYY).\n"
-        "- Convert all extracted dates to ISO standard 'YYYY-MM-DD' for tax logs.\n"
-        "  Examples:\n"
-        "  * '04/26/24' or '04-26-2024' -> '2024-04-26'\n"
-        "  * '12/05/23' or '12-05-23' -> '2023-12-05'\n"
-        "- Record the exact line of text where the date was found into 'raw_date_text' (e.g., 'TC# 1234 04/26/24 14:15').\n"
-        "- NEVER substitute, invent, or default to execution/current year dates.\n"
-        "- If the date is completely unreadable or absent, return '[Date Not Found]'.\n\n"
+        "- Locate the printed transaction date in the header or footer.\n"
+        "- Receipt dates strictly follow US standard formatting: MM/DD/YY or MM/DD/YYYY.\n"
+        "- The FIRST number is ALWAYS the month (1-12).\n"
+        "- The SECOND number is ALWAYS the day (1-31).\n"
+        "- The THIRD number is ALWAYS the year (2-digit or 4-digit, e.g., '26' means 2026, '24' means 2024).\n"
+        "- Extract the exact raw text line where the date appears into 'raw_date_text' (e.g., '06/24/26').\n"
+        "- Return the extracted numbers strictly as individual string values for 'month', 'day', and 'year'. Do NOT swap digits.\n"
+        "- If the date is unreadable or absent, return empty strings for month, day, year.\n\n"
         "OTHER EXTRACTION RULES:\n"
         "- Identify store 'vendor' name (e.g., 'Walmart').\n"
         "- Extract grand total as float string (e.g., '145.50'). Do NOT use subtotals or tax.\n"
@@ -238,7 +237,9 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "vendor": {"type": "STRING"},
                                 "total": {"type": "STRING"},
                                 "category": {"type": "STRING"},
-                                "date": {"type": "STRING"},
+                                "month": {"type": "STRING", "description": "2-digit month e.g. '06'"},
+                                "day": {"type": "STRING", "description": "2-digit day e.g. '24'"},
+                                "year": {"type": "STRING", "description": "2-digit or 4-digit year e.g. '26' or '2026'"},
                                 "raw_date_text": {"type": "STRING"},
                                 "items": {
                                     "type": "ARRAY",
@@ -253,7 +254,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                     }
                                 }
                             },
-                            "required": ["vendor", "total", "category", "date", "raw_date_text", "items"]
+                            "required": ["vendor", "total", "category", "month", "day", "year", "raw_date_text", "items"]
                         }
                     }
                 },
@@ -305,18 +306,20 @@ def process_single_email_group(args):
             vendor = re.sub(r'[\\/*?:"<>|]', "", receipt.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = receipt.get('category', 'Farm:General')
             total = receipt.get('total', '[Amount Not Found]')
-            extracted_date = receipt.get('date', '').strip()
+            
+            month = receipt.get('month', '').strip().zfill(2)
+            day = receipt.get('day', '').strip().zfill(2)
+            year = receipt.get('year', '').strip()
             raw_date_line = receipt.get('raw_date_text', '').strip()
             items_list = receipt.get('items', [])
             
-            # Convert MM-DD-YYYY if returned directly instead of YYYY-MM-DD
-            if re.match(r"^\d{2}-\d{2}-\d{4}$", extracted_date):
-                mm, dd, yyyy = extracted_date.split("-")
-                receipt_date = f"{yyyy}-{mm}-{dd}"
-            elif re.match(r"^\d{4}-\d{2}-\d{2}$", extracted_date):
-                receipt_date = extracted_date
+            if len(year) == 2:
+                year = f"20{year}"
+
+            if month and day and len(year) == 4 and month.isdigit() and day.isdigit() and year.isdigit():
+                receipt_date = f"{year}-{month}-{day}"
             else:
-                receipt_date = f"[VERIFY: {extracted_date or 'Date Unclear'}]"
+                receipt_date = f"[VERIFY: {raw_date_line or 'Date Unclear'}]"
 
             if total and not str(total).startswith('$'):
                 total = f"${total}"
