@@ -8,6 +8,8 @@ import time
 import concurrent.futures
 import socket
 import io
+import base64
+import requests
 from PIL import Image
 
 # Force network operations to timeout after 15 seconds to prevent hanging
@@ -23,24 +25,12 @@ EMAIL_USER = os.getenv("EMAIL_USER", "your_email@gmail.com")
 EMAIL_PASS = os.getenv("EMAIL_PASS", "your_app_password")
 IMAP_SERVER = "imap.gmail.com"
 
-try:
-    from google import genai
-    from google.genai import types
-except ImportError:
-    pass
-
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
     os.getenv("GEMINI_API_KEY_2"),
     os.getenv("GEMINI_API_KEY_3"),
 ]
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
-
-# Pre-initialize global client cache to prevent repeated handshakes
-CLIENT_CACHE = {}
-if GEMINI_KEYS:
-    for key in GEMINI_KEYS:
-        CLIENT_CACHE[key] = genai.Client(api_key=key)
 
 TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
 TRUSTED_SENDERS = [e.strip().lower() for e in TRUSTED_SENDERS_RAW.split(",") if e.strip()]
@@ -141,12 +131,17 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE
+# THREAD-ISOLATED VISION ENGINE (DIRECT REST API)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    # Reuse existing client instance
-    local_client = CLIENT_CACHE.get(assigned_key) if assigned_key else genai.Client()
-    
+    """Processes image directly over REST to bypass Python SDK hangs."""
+    buffer = io.BytesIO()
+    img_obj.save(buffer, format="JPEG", quality=85)
+    img_bytes = buffer.getvalue()
+    base64_image = base64.b64encode(img_bytes).decode('utf-8')
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
+
     prompt = (
         "Analyze this receipt image and extract data into a strict JSON layout.\n"
         "1. Identify the store name as 'vendor'.\n"
@@ -158,51 +153,64 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "   - 'price': item cost/price (no currency symbols, or empty string if not shown)\n"
         "   - 'weight': item weight or quantity by weight (e.g., '50 lbs', '2.5 kg', or empty string if not specified)"
     )
-    
-    item_schema = types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "name": types.Schema(type=types.Type.STRING),
-            "price": types.Schema(type=types.Type.STRING),
-            "weight": types.Schema(type=types.Type.STRING),
-        },
-        required=["name", "price", "weight"],
-    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": base64_image
+                        }
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "temperature": 0.0,
+            "response_schema": {
+                "type": "OBJECT",
+                "properties": {
+                    "vendor": {"type": "STRING"},
+                    "total": {"type": "STRING"},
+                    "category": {"type": "STRING"},
+                    "date": {"type": "STRING"},
+                    "items": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "name": {"type": "STRING"},
+                                "price": {"type": "STRING"},
+                                "weight": {"type": "STRING"}
+                            },
+                            "required": ["name", "price", "weight"]
+                        }
+                    }
+                },
+                "required": ["vendor", "total", "category", "date", "items"]
+            }
+        }
+    }
+
+    headers = {"Content-Type": "application/json"}
 
     for attempt in range(max_fast_retries + 1):
         try:
-            response = local_client.models.generate_content(
-                model='gemini-3.5-flash-lite',
-                contents=[img_obj, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                    tools=[],  # Suppresses AFC warning logs
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level="MINIMAL"
-                    ),
-                    response_schema=types.Schema(
-                        type=types.Type.OBJECT,
-                        properties={
-                            "vendor": types.Schema(type=types.Type.STRING),
-                            "total": types.Schema(type=types.Type.STRING),
-                            "category": types.Schema(type=types.Type.STRING),
-                            "date": types.Schema(type=types.Type.STRING),
-                            "items": types.Schema(
-                                type=types.Type.ARRAY,
-                                items=item_schema
-                            ),
-                        },
-                        required=["vendor", "total", "category", "date", "items"],
-                    ),
-                ),
-            )
-            return json.loads(response.text.strip())
+            response = requests.post(url, headers=headers, json=payload, timeout=20)
+            response.raise_for_status()
+            res_json = response.json()
+            
+            text_response = res_json['candidates'][0]['content']['parts'][0]['text']
+            return json.loads(text_response.strip())
         except Exception as e:
             if attempt < max_fast_retries:
                 time.sleep(1)
             else:
-                print(f"Vision API error for attachment: {e}")
+                print(f"REST API error for attachment: {e}")
                 return None
 
 # =====================================================================
