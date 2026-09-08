@@ -218,7 +218,6 @@ def process_single_email_group(args):
         )
         gathered_log_blocks.append(log_entry)
         
-    # Return success = True if at least one attachment succeeded
     has_success = len(gathered_log_blocks) > 0
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
@@ -258,7 +257,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
                 
     if extracted_records:
         def get_sorting_date(log_text):
-            match = re.search(r"Receipt Date:\s*([\d-:\s\w\[\]:]+)", log_text)
+            match = re.search(r"Receipt Date:\s*([\d:\s\w\[\]\-]+)", log_text)
             if match:
                 date_str = match.group(1).strip()
                 if re.match(r"^\d{4}-\d{2}-\d{2}", date_str):
