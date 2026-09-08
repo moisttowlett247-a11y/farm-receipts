@@ -8,6 +8,7 @@ import re
 import json
 import io
 import base64
+import concurrent.futures
 from datetime import datetime, timedelta
 
 print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
@@ -44,12 +45,82 @@ def setup_folders():
     return "."
 
 # =====================================================================
-# HIGH-SPEED IMAP STREAMER & DOWNSCALER
+# ULTRA-FAST DIRECT ATTACHMENT STREAMER
 # =====================================================================
-def download_new_receipts():
-    """Fetches unseen emails, validates sender/attachments, and extracts image payloads."""
+def fetch_attachment_for_uid(u_id):
+    """Directly fetches image parts using IMAP BODYSTRUCTURE, bypassing full email parsing."""
     import imaplib
-    import email
+
+    attachments_in_msg = []
+    try:
+        mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+        mail.login(EMAIL_USER, EMAIL_PASS)
+        mail.select("INBOX")
+
+        # 1. Inspect Header + Structure
+        status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
+        if status != 'OK' or not fetch_info:
+            mail.logout()
+            return None
+
+        raw_response = str(fetch_info).lower()
+
+        # Sender Filter
+        if TRUSTED_SENDERS:
+            sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
+            if not sender_matched:
+                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
+                mail.logout()
+                return None
+
+        # Parse part numbers for image attachments from BODYSTRUCTURE
+        # Typical structure returned: ("IMAGE" "JPEG" ... ) or part identifiers like 2, 2.1
+        bs_str = str(fetch_info[0]) if fetch_info and len(fetch_info) > 0 else ""
+        part_matches = re.findall(r'\(("IMAGE"|"APPLICATION")\s+"(JPEG|PNG|WEBP|HEIC|JPG)"', bs_str, re.IGNORECASE)
+
+        if not part_matches:
+            # Fallback: check if the whole email is a single raw image
+            has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
+            if not has_image:
+                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image found.", flush=True)
+                mail.logout()
+                return None
+            target_parts = ['1']
+        else:
+            # Extract section numbers (e.g. BODY[2] or BODY[2.1])
+            sections = re.findall(r'(\d+(?:\.\d+)*)\s+\("IMAGE"', bs_str, re.IGNORECASE)
+            target_parts = sections if sections else ['2', '1.2', '1']
+
+        # 2. Fetch raw image bytes directly for target sections
+        for section in target_parts:
+            status, img_data = mail.uid('fetch', u_id, f'(BODY.PEEK[{section}])')
+            if status == 'OK' and img_data and isinstance(img_data[0], tuple):
+                raw_bytes = img_data[0][1]
+                if raw_bytes and len(raw_bytes) > 100:
+                    try:
+                        pil_image = Image.open(io.BytesIO(raw_bytes))
+                        pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                        attachments_in_msg.append({
+                            "image_object": pil_image,
+                            "original_name": f"receipt_{u_id}_{section}.jpg",
+                        })
+                        break # Successfully got primary attachment
+                    except Exception:
+                        continue
+
+        mail.logout()
+
+        if attachments_in_msg:
+            return {"u_id": u_id, "attachments": attachments_in_msg}
+
+    except Exception as e:
+        print(f"[{time.strftime('%H:%M:%S')}] Attachment fetch error for UID {u_id}: {e}", flush=True)
+
+    return None
+
+def download_new_receipts():
+    """Fetches unseen emails and streams image attachments in parallel."""
+    import imaplib
 
     print(f"[{time.strftime('%H:%M:%S')}] Connecting to IMAP server...", flush=True)
     saved_in_memory_images = []
@@ -58,7 +129,6 @@ def download_new_receipts():
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
         
-        # Search unseen emails from yesterday onward
         since_date = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
         status, data = mail.uid('search', None, f'(UNSEEN SINCE "{since_date}")')
         
@@ -71,88 +141,15 @@ def download_new_receipts():
             return None, []
 
         email_uids = data[0].decode('utf-8').split()
-        print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s).", flush=True)
-        
-        candidate_uids = []
-        for u_id in email_uids:
-            try:
-                # Fetch Header + Structure per UID
-                status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
-                if status != 'OK' or not fetch_info:
-                    continue
+        print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s). Downloading attachments in parallel...", flush=True)
 
-                raw_response = str(fetch_info).lower()
-                
-                # Check 1: Trusted Sender Verification
-                if TRUSTED_SENDERS:
-                    sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
-                    if not sender_matched:
-                        print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
-                        continue
+        if email_uids:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(email_uids), 5)) as executor:
+                results = executor.map(fetch_attachment_for_uid, email_uids)
+                for res in results:
+                    if res:
+                        saved_in_memory_images.append(res)
 
-                # Check 2: Image Attachment Verification
-                has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
-                if not has_image:
-                    print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image attachment found in structure.", flush=True)
-                    continue
-
-                candidate_uids.append(u_id)
-            except Exception as fetch_err:
-                print(f"[{time.strftime('%H:%M:%S')}] Timeout or error checking UID {u_id}: {fetch_err}", flush=True)
-
-        print(f"[{time.strftime('%H:%M:%S')}] {len(candidate_uids)} email(s) passed filters. Downloading payloads...", flush=True)
-
-        # Download full bodies ONLY for matching candidate UIDs
-        for u_id in candidate_uids:
-            try:
-                status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
-                if status != 'OK' or not fetch_data:
-                    continue
-                    
-                msg = None
-                for block in fetch_data:
-                    if isinstance(block, tuple) and len(block) > 1:
-                        msg = email.message_from_bytes(block[1])
-                        break
-                        
-                if msg is None:
-                    continue
-                    
-                attachments_in_msg = []
-                
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-                            continue
-                        filename = part.get_filename() or "receipt.jpg"
-                        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.heic')):
-                            image_bytes = part.get_payload(decode=True)
-                            if image_bytes:
-                                pil_image = Image.open(io.BytesIO(image_bytes))
-                                pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-                                attachments_in_msg.append({
-                                    "image_object": pil_image,
-                                    "original_name": filename,
-                                })
-                else:
-                    if msg.get_content_type().lower() in ['image/jpeg', 'image/png', 'image/jpg', 'image/webp']:
-                        image_bytes = msg.get_payload(decode=True)
-                        if image_bytes:
-                            pil_image = Image.open(io.BytesIO(image_bytes))
-                            pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-                            attachments_in_msg.append({
-                                "image_object": pil_image,
-                                "original_name": f"direct_{u_id}.jpg",
-                            })
-
-                if attachments_in_msg:
-                    saved_in_memory_images.append({
-                        "u_id": u_id,
-                        "attachments": attachments_in_msg,
-                    })
-            except Exception as dl_err:
-                print(f"[{time.strftime('%H:%M:%S')}] Timeout downloading body for UID {u_id}: {dl_err}", flush=True)
-                
         if saved_in_memory_images:
             return mail, saved_in_memory_images
         else:
@@ -314,8 +311,6 @@ def process_single_email_group(args):
 # PIPELINE COORDINATOR
 # =====================================================================
 def process_receipts(mail_session, email_packages, processed_dir):
-    import concurrent.futures
-
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     extracted_records = []
     worker_inputs = []
@@ -334,7 +329,11 @@ def process_receipts(mail_session, email_packages, processed_dir):
                 u_id = result["u_id"]
                 if result["success"]:
                     extracted_records.extend(result["blocks"])
-                    mail_session.uid('store', u_id, '+FLAGS', '\\Seen')
+                    if mail_session:
+                        try:
+                            mail_session.uid('store', u_id, '+FLAGS', '\\Seen')
+                        except Exception:
+                            pass
                 else:
                     print(f"⚠️ Total failure on UID {u_id}. Keeping unread.", flush=True)
             except Exception as e:
@@ -359,11 +358,12 @@ def process_receipts(mail_session, email_packages, processed_dir):
             
         print(f"[{time.strftime('%H:%M:%S')}] Processed and logged {len(extracted_records)} receipts.", flush=True)
         
-    try:
-        mail_session.close()
-        mail_session.logout()
-    except Exception:
-        pass
+    if mail_session:
+        try:
+            mail_session.close()
+            mail_session.logout()
+        except Exception:
+            pass
 
 # =====================================================================
 # MAIN ENTRY
