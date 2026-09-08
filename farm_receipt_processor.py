@@ -47,7 +47,7 @@ def setup_folders():
 # HIGH-SPEED IMAP STREAMER & DOWNSCALER
 # =====================================================================
 def download_new_receipts():
-    """Fetches attachments using targeted IMAP BODYSTRUCTURE inspection."""
+    """Fetches headers + structure in a single batched IMAP request."""
     import imaplib
     import email
 
@@ -58,7 +58,7 @@ def download_new_receipts():
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
         
-        # Fast search: Check unseen emails from yesterday onward only
+        # Search unseen emails from yesterday onward
         since_date = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
         status, data = mail.uid('search', None, f'(UNSEEN SINCE "{since_date}")')
         
@@ -73,31 +73,45 @@ def download_new_receipts():
         email_uids = data[0].decode('utf-8').split()
         print(f"[{time.strftime('%H:%M:%S')}] Found {len(email_uids)} unseen email(s).", flush=True)
         
-        for u_id in email_uids:
-            # Step 1: Lightweight Header Check (Sender Filter)
-            status, header_data = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)])')
-            if status != 'OK' or not header_data:
-                continue
-            
-            header_text = ""
-            for block in header_data:
-                if isinstance(block, tuple) and len(block) > 1:
-                    header_text = block[1].decode('utf-8', errors='ignore').lower()
-                    break
+        # Batch fetch Headers AND Bodystructure together in 1 network trip
+        uid_sequence = ",".join(email_uids)
+        status, batch_data = mail.uid('fetch', uid_sequence, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
+        
+        if status != 'OK' or not batch_data:
+            try:
+                mail.close()
+                mail.logout()
+            except Exception:
+                pass
+            return None, []
+
+        # Parse batch response map: { uid: {"from": str, "has_image": bool} }
+        candidate_uids = []
+        current_uid = None
+        
+        for item in batch_data:
+            if isinstance(item, tuple):
+                header_info = item[0].decode('utf-8', errors='ignore')
+                # Extract UID from response line
+                uid_match = re.search(r'UID\s+(\d+)', header_info, re.IGNORECASE)
+                if uid_match:
+                    current_uid = uid_match.group(1)
                 
-            if TRUSTED_SENDERS and not any(sender in header_text for sender in TRUSTED_SENDERS):
-                continue
+                content_text = item[1].decode('utf-8', errors='ignore').lower() if isinstance(item[1], bytes) else str(item[1]).lower()
+                
+                # Check trusted sender
+                sender_ok = True
+                if TRUSTED_SENDERS:
+                    sender_ok = any(sender in content_text for sender in TRUSTED_SENDERS)
+                
+                # Check image indicator in structure/headers
+                has_image = any(ext in content_text for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
+                
+                if current_uid and sender_ok and has_image:
+                    candidate_uids.append(current_uid)
 
-            # Step 2: Structure Check - avoids downloading non-image email payloads
-            status, struct_data = mail.uid('fetch', u_id, '(BODYSTRUCTURE)')
-            if status != 'OK' or not struct_data or not struct_data[0]:
-                continue
-
-            struct_str = str(struct_data[0]).lower()
-            if not any(ext in struct_str for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/']):
-                continue
-
-            # Step 3: Fetch Full Body stream only after image confirmation
+        # Download full bodies ONLY for matching candidate UIDs
+        for u_id in candidate_uids:
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
