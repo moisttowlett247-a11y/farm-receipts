@@ -129,7 +129,7 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (FAST 503 RETRIES)
+# THREAD-ISOLATED VISION ENGINE (FAST RETRIES)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
     local_client = genai.Client(api_key=assigned_key)
@@ -145,7 +145,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
     for attempt in range(max_fast_retries + 1):
         try:
             response = local_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash-lite',
                 contents=[img_obj, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -169,9 +169,9 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
             return json.loads(response.text.strip())
         except Exception as e:
             err_str = str(e)
-            if "503" in err_str and attempt < max_fast_retries:
-                wait_time = (attempt + 1) * 2  # 2s on first attempt, 4s on second
-                print(f"⚡ 503 micro-spike hit. Fast retry in {wait_time}s (Attempt {attempt + 1}/{max_fast_retries})...")
+            if ("503" in err_str or "429" in err_str) and attempt < max_fast_retries:
+                wait_time = (attempt + 1) * 2
+                print(f"⚡ Transient API response ({err_str[:20]}). Fast retry in {wait_time}s (Attempt {attempt + 1}/{max_fast_retries})...")
                 time.sleep(wait_time)
             else:
                 print(f"Cloud server drop (Skipping write layout block): {e}")
@@ -258,7 +258,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
                     except:
                         pass
                 else:
-                    print(f"⚠️ 503 Server Error / total failure caught on UID {u_id}. Keeping email UNREAD for next safety run.")
+                    print(f"⚠️ Total failure caught on UID {u_id}. Keeping email UNREAD for next safety run.")
             except Exception as e:
                 print(f"Thread processor critical error: {e}")
                 
