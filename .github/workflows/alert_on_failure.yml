@@ -14,8 +14,8 @@ jobs:
     - name: Send Text Message Notification
       uses: dawidd6/action-send-mail@v4
       with:
-        # Corrected outbound mailing server connection points
-        server_address: ://gmail.com
+        # FIXED: Changed from "://gmail.com" to the valid Gmail SMTP server address
+        server_address: smtp.gmail.com
         server_port: 465
         secure: true
         username: ${{ secrets.EMAIL_USER }}
