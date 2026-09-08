@@ -170,7 +170,8 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     img_bytes = buffer.getvalue()
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={assigned_key}"
+    # Pin the specific version snapshot under v1beta
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key={assigned_key}"
 
     prompt = (
         "Analyze this image carefully. It may contain ONE single receipt OR MULTIPLE distinct receipts placed side-by-side or stacked.\n"
