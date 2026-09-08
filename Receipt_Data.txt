@@ -96,3 +96,95 @@ Amount: $38.01
 Items:
   - MENS SHOES - $34.48 (1)
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-08 20:22:40
+==================================================
+File Name: Farm-General__The_Tool_Store_r1___1000002293.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Date Source Line: Sep 04, 2026
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00 (1)
+  - Regal air hose - $26.00 (1)
+  - Regal quick connect set - $6.99 (1)
+  - Air chuck used - $6.00 (1)
+  - Tape - $2.00 (1)
+  - Air gauge - $3.00 (1)
+--------------------------------------------------
+File Name: Farm-General__Walmart_r3___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Amount: $105.07
+Items:
+  - GV SWITCH WHT - $1.48 (1)
+  - DR PEPPER - $9.97 (1)
+  - PLUG REFILL - $9.94 (1)
+  - GV R T 40 - $2.84 (1)
+  - GV R T 40 - $2.84 (1)
+  - COOKIE DOUGH - $3.86 (1)
+  - GRD BTRMLK - $2.98 (1)
+  - GRD BTRMLK - $4.17 (1)
+  - DONUTS - $5.97 (1)
+  - DG RSNC PEP - $5.97 (1)
+  - COTT CMFT 6M - $6.98 (1)
+  - DG RSNC PEP - $2.96 (1)
+  - GV 2D EVERYRD - $5.94 (1)
+  - SMFTD WH CHD - $7.38 (1)
+  - SUGAR GRANU - $7.38 (1)
+  - HVRANCH 3602 - $3.24 (1)
+  - PC 30OCT WPE - $6.87 (1)
+  - 1LB ROLL SSC - $4.97 (1)
+--------------------------------------------------
+File Name: Farm-General__Walmart_r4___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Amount: $38.01
+Items:
+  - MENS SHOES - $34.48 (1)
+--------------------------------------------------
+File Name: Farm-General__Walmart_r2___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-24
+Date Source Line: 09/24/26
+Amount: $145.50
+Items:
+  - DR PEPPER - $9.97 (1)
+  - FRENCH BREAD - $0.44 (1)
+  - FRENCH BREAD - $0.44 (1)
+  - ITAL SLCE - $0.88 (1)
+  - 50CT WIPE - $0.88 (1)
+  - 50CT WIPE - $1.17 (1)
+  - GV R T 40 - $1.17 (1)
+  - GV R T 40 - $2.78 (1)
+  - GV R T 40 - $2.78 (1)
+  - RR NUTR - $14.87 (1)
+  - GV 3T EVERYRD - $4.74 (1)
+  - TRD ROTI CLD - $3.97 (1)
+  - TRD ROTI CLD - $3.97 (1)
+  - COTT CMFT 6M - $6.98 (1)
+  - TRD SPAG 1602 - $1.24 (1)
+  - GV SPAG 1602 - $1.08 (1)
+  - KFT SHRD 16Z - $5.64 (1)
+  - PAPRIKA - $1.50 (1)
+  - GV CHK 3202 - $1.50 (1)
+  - GV CHK 3202 - $1.72 (1)
+  - GV FAM SIZE - $1.72 (1)
+  - GV FAM SIZE - $3.72 (1)
+  - SOUR CREAM - $6.24 (1)
+  - FRG PARMESAN - $11.52 (1)
+  - GV UNSLT BTR - $3.06 (1)
+  - FF 12PK CAT - $11.52 (1)
+  - GV RICE 800Z - $3.74 (1)
+  - CH DRK BRN - $3.37 (1)
+  - DG RSNC PEP - $5.97 (1)
+  - DG RSNC PEP - $5.97 (1)
+  - DONUTS - $4.18 (1)
+--------------------------------------------------
