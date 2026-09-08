@@ -83,3 +83,88 @@ Amount: $38.01
 Items:
   - MENS SHOES - $34.48
 --------------------------------------------------
+
+==================================================
+BATCH RUN DATE: 2026-09-08 19:48:44
+==================================================
+File Name: Farm-General__Walmart_r2___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2024-04-26
+Amount: $145.50
+Items:
+  - DR PEPPER - $9.97
+  - FRENCH BREAD - $0.44
+  - FRENCH BREAD - $0.44
+  - ITAL SLCE - $0.88
+  - ITAL SLCE - $0.88
+  - 50CT WIPE - $1.17
+  - 50CT WIPE - $1.17
+  - GV GR T 40 - $2.78
+  - GV GR T 40 - $2.78
+  - 14 RR NUTR - $14.87
+  - ** VOIDED ENTRY ** - $0.00
+  - GV 3T EVERYRD - $4.74
+  - COTT CMET 6M - $3.97
+  - TRD ROTI CLD - $6.98
+  - TRD ROTI CLD - $3.97
+  - GV SPAG 1602 - $1.24
+  - KFT SHRD 16Z - $5.64
+  - PAPRIKA - $1.50
+  - GV CHK 3202 - $1.50
+  - GV CHK 3202 - $1.72
+  - GV FAM SIZE - $1.72
+  - GV CREAM - $3.72
+  - SOUR CREAM - $3.06
+  - FRG PARMESAN - $11.52
+  - GV UNSLT BTR - $3.37
+  - FF 12PK CAT - $3.74
+  - DG RSNC PEP - $5.97
+  - DG RSNC PEP - $5.97
+  - DONUTS - $4.18
+--------------------------------------------------
+File Name: Farm-General__The_Tool_Store_r1___1000002293.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00
+  - Regal air hose - $26.00
+  - Regal quick connect set - $6.99
+  - Air chuck used - $6.00
+  - Tape - $2.00
+  - Air gauge - $3.00
+--------------------------------------------------
+File Name: Farm-General__Walmart_r3___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Amount: $105.07
+Items:
+  - GV SWICH WHT - $1.48
+  - DR PEPPER - $9.97
+  - PLUG REFILL - $2.84
+  - GV GR T 40 - $2.84
+  - GV GR T 40 - $3.86
+  - COOKIE DOUGH - $2.97
+  - GRD BTTRMLK - $2.97
+  - GRD BTTRMLK - $4.18
+  - DONUTS - $5.97
+  - GV 6.97 ea - $5.97
+  - DG RSNC PEP - $6.98
+  - COTT CMET 6M - $2.96
+  - GV 2D EVERYRD - $5.94
+  - SMFDD WH CHD - $7.38
+  - SUGAR GRANUL - $3.24
+  - BBQ SAUCE - $6.87
+  - PC 300CT WPE - $4.97
+--------------------------------------------------
+File Name: Farm-General__Walmart_r4___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Amount: $38.01
+Items:
+  - MENS SHOES - $34.48
+--------------------------------------------------
