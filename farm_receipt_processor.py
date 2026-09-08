@@ -7,9 +7,14 @@ from datetime import datetime
 import time
 import concurrent.futures
 import socket
+import io
+from PIL import Image
 
-# Force network calls (IMAP and API requests) to time out after 30 seconds rather than hanging
-socket.setdefaulttimeout(30.0)
+# Force network operations to timeout after 15 seconds to prevent hanging
+socket.setdefaulttimeout(15.0)
+
+# Disable PIL image size limit warnings for fast memory processing
+Image.MAX_IMAGE_PIXELS = None
 
 # =====================================================================
 # CONFIGURATION & KEY MANAGER
@@ -32,16 +37,16 @@ GEMINI_KEYS = [
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
 TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
-TRUSTED_SENDERS = [email.strip() for email in TRUSTED_SENDERS_RAW.split(",") if email.strip()]
+TRUSTED_SENDERS = [e.strip().lower() for e in TRUSTED_SENDERS_RAW.split(",") if e.strip()]
 
 def setup_folders():
     return "."
 
 # =====================================================================
-# HIGH-SPEED INBOX SWEEPER (WITH AUTOMATIC IMAGE DOWNSCALING)
+# HIGH-SPEED IMAP STREAMER & DOWNSCALER
 # =====================================================================
 def download_new_receipts():
-    """Fetches unread emails from your trusted list in memory and compresses images."""
+    """Fetches and downscales image attachments using targeted IMAP fetches."""
     saved_in_memory_images = []
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -49,84 +54,70 @@ def download_new_receipts():
         mail.select("INBOX")
         
         status, data = mail.uid('search', None, 'UNSEEN')
-        email_uids = []
-        if status == 'OK' and data:
-            for item in data:
-                if isinstance(item, bytes):
-                    email_uids.extend(item.decode('utf-8').split())
-                    
+        if status != 'OK' or not data or not data[0]:
+            mail.logout()
+            return None, []
+
+        email_uids = data[0].decode('utf-8').split()
+        
         for u_id in email_uids:
+            # Step 1: Lightweight Header Check (Sender Filter)
             status, header_data = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)])')
             if status != 'OK' or not header_data:
                 continue
             
             header_text = ""
-            try:
-                for block in header_data:
-                    if isinstance(block, tuple) and len(block) > 1:
-                        header_text = block[1].decode('utf-8', errors='ignore').lower()
-                        break
-            except Exception:
-                header_text = ""
+            for block in header_data:
+                if isinstance(block, tuple) and len(block) > 1:
+                    header_text = block[1].decode('utf-8', errors='ignore').lower()
+                    break
                 
-            if TRUSTED_SENDERS and not any(sender.lower() in header_text for sender in TRUSTED_SENDERS):
+            if TRUSTED_SENDERS and not any(sender in header_text for sender in TRUSTED_SENDERS):
                 continue
-                
+
+            # Step 2: Fetch Body/Payload Stream
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
                 
             msg = None
-            try:
-                for block in fetch_data:
-                    if isinstance(block, tuple) and len(block) > 1:
-                        msg = email.message_from_bytes(block[1])
-                        break
-            except Exception:
-                msg = None
-                
+            for block in fetch_data:
+                if isinstance(block, tuple) and len(block) > 1:
+                    msg = email.message_from_bytes(block[1])
+                    break
+                    
             if msg is None:
                 continue
                 
-            has_valid_attachments = False
             attachments_in_msg = []
             
-            root_content_type = msg.get_content_type().lower()
-            if root_content_type in ['image/jpeg', 'image/png', 'image/jpg']:
-                from PIL import Image
-                import io
-                image_bytes = msg.get_payload(decode=True)
-                pil_image = Image.open(io.BytesIO(image_bytes))
-                
-                # High-speed optimization: Downscale high-res images to 1280px max edge
-                pil_image.thumbnail((1280, 1280))
-                
-                attachments_in_msg.append({
-                    "image_object": pil_image,
-                    "original_name": f"direct_upload_{u_id}.jpg",
-                })
-                has_valid_attachments = True
-            else:
+            # Fast extraction for single-part or multipart messages
+            if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
                         continue
-                    filename = part.get_filename()
-                    if filename and filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        from PIL import Image
-                        import io
+                    filename = part.get_filename() or "receipt.jpg"
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.heic')):
                         image_bytes = part.get_payload(decode=True)
+                        if image_bytes:
+                            pil_image = Image.open(io.BytesIO(image_bytes))
+                            pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                            attachments_in_msg.append({
+                                "image_object": pil_image,
+                                "original_name": filename,
+                            })
+            else:
+                if msg.get_content_type().lower() in ['image/jpeg', 'image/png', 'image/jpg', 'image/webp']:
+                    image_bytes = msg.get_payload(decode=True)
+                    if image_bytes:
                         pil_image = Image.open(io.BytesIO(image_bytes))
-                        
-                        # High-speed optimization: Downscale high-res images to 1280px max edge
-                        pil_image.thumbnail((1280, 1280))
-                        
+                        pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                         attachments_in_msg.append({
                             "image_object": pil_image,
-                            "original_name": filename,
+                            "original_name": f"direct_{u_id}.jpg",
                         })
-                        has_valid_attachments = True
-                        
-            if has_valid_attachments:
+
+            if attachments_in_msg:
                 saved_in_memory_images.append({
                     "u_id": u_id,
                     "attachments": attachments_in_msg,
@@ -141,9 +132,9 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (FAST RETRIES & MINIMAL THINKING)
+# THREAD-ISOLATED VISION ENGINE
 # =====================================================================
-def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
+def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
     local_client = genai.Client(api_key=assigned_key)
     prompt = (
         "Analyze this receipt image and extract data into a strict JSON layout.\n"
@@ -196,17 +187,14 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=2):
             )
             return json.loads(response.text.strip())
         except Exception as e:
-            err_str = str(e)
-            if ("503" in err_str or "429" in err_str) and attempt < max_fast_retries:
-                wait_time = (attempt + 1) * 2
-                print(f"⚡ Transient API response ({err_str[:20]}). Fast retry in {wait_time}s (Attempt {attempt + 1}/{max_fast_retries})...")
-                time.sleep(wait_time)
+            if attempt < max_fast_retries:
+                time.sleep(1)
             else:
-                print(f"Cloud server drop (Skipping write layout block): {e}")
+                print(f"Vision API error for attachment: {e}")
                 return None
 
 # =====================================================================
-# INDEPENDENT WORKER SCOPE ROUTER
+# WORKER SCOPE ROUTER
 # =====================================================================
 def process_single_email_group(args):
     email_package, assigned_key = args
@@ -217,13 +205,11 @@ def process_single_email_group(args):
     for attachment in attachments:
         img_obj = attachment["image_object"]
         filename = attachment["original_name"]
-        print(f"Offloading cloud analysis for: {filename}...")
         
         data = analyze_image_with_gemini(img_obj, assigned_key)
         img_obj.close()
         
         if data is None:
-            print(f"⚠️ Failed to process image '{filename}' on UID {u_id}. Skipping attachment...")
             continue
             
         vendor = re.sub(r'[\\/*?:"<>|]', "", data.get('vendor', 'Unknown_Vendor'))[:20].strip()
@@ -269,7 +255,7 @@ def process_single_email_group(args):
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
 # =====================================================================
-# PIPELINE COORDINATOR (WITH HIGH CONCURRENCY WORKER POOL)
+# PIPELINE COORDINATOR
 # =====================================================================
 def process_receipts(mail_session, email_packages, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
@@ -280,8 +266,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
         assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
         worker_inputs.append((package, assigned_key))
         
-    # High concurrency pool size to process emails and attachments in parallel
-    pool_workers = min(len(email_packages) * 2, 8)
+    pool_workers = min(len(email_packages) * 2, 10)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
         futures = {executor.submit(process_single_email_group, w_in): w_in for w_in in worker_inputs}
@@ -299,9 +284,9 @@ def process_receipts(mail_session, email_packages, processed_dir):
                     except:
                         pass
                 else:
-                    print(f"⚠️ Total failure caught on UID {u_id}. Keeping email UNREAD for next safety run.")
+                    print(f"⚠️ Total failure on UID {u_id}. Keeping unread.")
             except Exception as e:
-                print(f"Thread processor critical error: {e}")
+                print(f"Thread processor error: {e}")
                 
     if extracted_records:
         def get_sorting_date(log_text):
@@ -320,7 +305,7 @@ def process_receipts(mail_session, email_packages, processed_dir):
             log.write(f"==================================================\n")
             log.writelines(extracted_records)
             
-        print(f"Successfully sorted and processed {len(extracted_records)} records chronologically to your ledger.")
+        print(f"Processed and logged {len(extracted_records)} receipts.")
         
     mail_session.expunge()
     mail_session.logout()
@@ -329,10 +314,10 @@ def process_receipts(mail_session, email_packages, processed_dir):
 # MAIN ENTRY
 # =====================================================================
 if __name__ == "__main__":
-    print("Free Farm Receipt Processor System Initialized.")
+    print("Free Farm Receipt Processor Initialized.")
     processed_folder = setup_folders()
     mail_session, email_queue = download_new_receipts()
     if email_queue:
         process_receipts(mail_session, email_queue, processed_folder)
     else:
-        print("Inbox check clear. No unread receipts found matching filter rules.")
+        print("Inbox check clear. No unread receipts found.")
