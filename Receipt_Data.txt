@@ -1,0 +1,103 @@
+File Name: Farm-General__Walmart_r2___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-08-24
+Date Source Line: 08/24/26
+Payment Method: CAPITALONE DEBIT- 8582 I 0
+Reference #: 623642288971
+Subtotal: $155.11
+Sales Tax: $10.25
+Amount: $145.50
+Items:
+  - DR PEPPER - $9.97 (078000082130)
+  - FRENCH BREAD - $0.44 (20098900000 F)
+  - ITAL SLCE - $0.88 (20016000000 F)
+  - 50CT WIPE - $1.17 (194346604740)
+  - 50CT WIPE - $1.17 (194346604740)
+  - 50CT WIPE - $1.17 (194346604740)
+  - GV GR T 40 - $2.78 (078742013160 F)
+  - GV GR T 40 - $2.78 (078742013160 F)
+  - 14 RR NUTR - $14.87 (071190006970)
+  - GV 3T EVERYD - $4.74 (194343372550)
+  - TRD ROTI CL - $3.97 (0180000817730 F)
+  - TRD ROTI CL - $3.97 (018000081820 F)
+  - TRD ROTI CL - $6.98 (036000557070)
+  - GV SPAG 160Z - $1.24 (078742203970 F)
+  - KFT SHRD 16 - $5.64 (021000000000 F)
+  - PAPRIKA - $1.08 (078742094450 F)
+  - GV CHK 32OZ - $1.50 (078742020620 F)
+  - GV CHK 32OZ - $1.50 (078742020620 F)
+  - GV FAM SIZE - $1.72 (078742094450 F)
+  - GV FAM SIZE - $1.72 (078742094450 F)
+  - SOUR CREAM - $3.72 (073420000240 F)
+  - FRG PARMESAN - $3.06 (041716887270 F)
+  - FF 12PK CAT - $11.52 (050000869960)
+  - FF 12PK CAT - $11.52 (050000869960)
+  - GV UNSLT BTR - $3.74 (078742352060 F)
+  - GV RICE 800Z - $3.37 (078742352060 F)
+  - CH DRK BRN - $5.97 (015800064320 F)
+  - DG RSNC PEP - $5.97 (071921823790 F)
+  - DG RSNC PEP - $4.18 (071921823790 F)
+--------------------------------------------------
+File Name: Farm-General__The_Tool_Store_r1___1000002293.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Date Source Line: 09/04/2026
+Payment Method: Discover Purchase ending in 8582
+Reference #: 2-12380
+Subtotal: $93.99
+Sales Tax: $7.52
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00 (1 x $50.00)
+  - Regal air hose - $26.00 (1 x $26.00)
+  - ITAL SLCE - $6.99 (1 x $6.99)
+  - Regal quick connect set - $6.99 (1 x $6.99)
+  - Air chuck used - $6.00 (1 x $6.00)
+  - Tape - $2.00 (1 x $2.00)
+  - Air gauge - $3.00 (1 x $3.00)
+--------------------------------------------------
+File Name: Farm-General__Walmart_r3___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Payment Method: CAPITALONE DEBIT- 8582 I 0
+Reference #: 62514077876
+Subtotal: $98.71
+Sales Tax: $3.75
+Amount: $105.07
+Items:
+  - GV SWITCH WHT - $1.48 (078742012280 F)
+  - DR PEPPER - $9.97 (078000082130)
+  - PLUG REFILL - $9.94 (030772204260)
+  - GV GR T 40 - $2.84 (078742013160 F)
+  - GV GR T 40 - $2.84 (078742013160 F)
+  - COOKIE DOUGH - $3.86 (018000017730 F)
+  - GRD BTTRMLK - $2.97 (018000001820 F)
+  - GRD BTTRMLK - $2.97 (018000001820 F)
+  - DONUTS - $4.18 (200100000000 F)
+  - COTT CMFT 6M - $6.98 (036000557070)
+  - GV 2D EVERYD - $5.94 (194343372550)
+  - DG RSNC PEP - $2.96 (071921832790 F)
+  - SMTFD WH CHD - $7.38 (0284003414130 F)
+  - HVRANCH SCHD - $7.38 (071100060680 F)
+  - BBQ SAUCE - $3.24 (078742094450 F)
+  - SUGAR GRANUL - $6.87 (078742371170 F)
+  - PC 300CT WIPE - $6.87 (194345060790 H)
+  - 1LB ROLL - $4.97 (079000115530 F)
+--------------------------------------------------
+File Name: Farm-General__Walmart_r4___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Payment Method: CAPITALONE DEBIT- 8582 I 0
+Reference #: 28040274
+Subtotal: $34.48
+Sales Tax: $3.53
+Amount: $38.01
+Items:
+  - MENS SHOES - $34.48 (605388537440)
+--------------------------------------------------
