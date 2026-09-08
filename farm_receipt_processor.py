@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
 
 import socket
-socket.setdefaulttimeout(15.0)
+socket.setdefaulttimeout(30.0)
 
 import requests
 from PIL import Image
@@ -75,77 +75,83 @@ def download_new_receipts():
         
         candidate_uids = []
         for u_id in email_uids:
-            # Check Header + Structure per UID
-            status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
-            if status != 'OK' or not fetch_info:
-                continue
-
-            raw_response = str(fetch_info).lower()
-            
-            # Check 1: Trusted Sender Verification
-            if TRUSTED_SENDERS:
-                sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
-                if not sender_matched:
-                    print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
+            try:
+                # Fetch Header + Structure per UID
+                status, fetch_info = mail.uid('fetch', u_id, '(BODY.PEEK[HEADER.FIELDS (FROM)] BODYSTRUCTURE)')
+                if status != 'OK' or not fetch_info:
                     continue
 
-            # Check 2: Image Attachment Verification
-            has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
-            if not has_image:
-                print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image attachment found in structure.", flush=True)
-                continue
+                raw_response = str(fetch_info).lower()
+                
+                # Check 1: Trusted Sender Verification
+                if TRUSTED_SENDERS:
+                    sender_matched = any(sender in raw_response for sender in TRUSTED_SENDERS)
+                    if not sender_matched:
+                        print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: Sender not in TRUSTED_SENDERS.", flush=True)
+                        continue
 
-            candidate_uids.append(u_id)
+                # Check 2: Image Attachment Verification
+                has_image = any(ext in raw_response for ext in ['.jpg', '.jpeg', '.png', '.webp', 'image/'])
+                if not has_image:
+                    print(f"[{time.strftime('%H:%M:%S')}] UID {u_id} skipped: No image attachment found in structure.", flush=True)
+                    continue
+
+                candidate_uids.append(u_id)
+            except Exception as fetch_err:
+                print(f"[{time.strftime('%H:%M:%S')}] Timeout or error checking UID {u_id}: {fetch_err}", flush=True)
 
         print(f"[{time.strftime('%H:%M:%S')}] {len(candidate_uids)} email(s) passed filters. Downloading payloads...", flush=True)
 
         # Download full bodies ONLY for matching candidate UIDs
         for u_id in candidate_uids:
-            status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
-            if status != 'OK' or not fetch_data:
-                continue
-                
-            msg = None
-            for block in fetch_data:
-                if isinstance(block, tuple) and len(block) > 1:
-                    msg = email.message_from_bytes(block[1])
-                    break
+            try:
+                status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
+                if status != 'OK' or not fetch_data:
+                    continue
                     
-            if msg is None:
-                continue
+                msg = None
+                for block in fetch_data:
+                    if isinstance(block, tuple) and len(block) > 1:
+                        msg = email.message_from_bytes(block[1])
+                        break
+                        
+                if msg is None:
+                    continue
+                    
+                attachments_in_msg = []
                 
-            attachments_in_msg = []
-            
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-                        continue
-                    filename = part.get_filename() or "receipt.jpg"
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.heic')):
-                        image_bytes = part.get_payload(decode=True)
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
+                            continue
+                        filename = part.get_filename() or "receipt.jpg"
+                        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.heic')):
+                            image_bytes = part.get_payload(decode=True)
+                            if image_bytes:
+                                pil_image = Image.open(io.BytesIO(image_bytes))
+                                pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                                attachments_in_msg.append({
+                                    "image_object": pil_image,
+                                    "original_name": filename,
+                                })
+                else:
+                    if msg.get_content_type().lower() in ['image/jpeg', 'image/png', 'image/jpg', 'image/webp']:
+                        image_bytes = msg.get_payload(decode=True)
                         if image_bytes:
                             pil_image = Image.open(io.BytesIO(image_bytes))
                             pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                             attachments_in_msg.append({
                                 "image_object": pil_image,
-                                "original_name": filename,
+                                "original_name": f"direct_{u_id}.jpg",
                             })
-            else:
-                if msg.get_content_type().lower() in ['image/jpeg', 'image/png', 'image/jpg', 'image/webp']:
-                    image_bytes = msg.get_payload(decode=True)
-                    if image_bytes:
-                        pil_image = Image.open(io.BytesIO(image_bytes))
-                        pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
-                        attachments_in_msg.append({
-                            "image_object": pil_image,
-                            "original_name": f"direct_{u_id}.jpg",
-                        })
 
-            if attachments_in_msg:
-                saved_in_memory_images.append({
-                    "u_id": u_id,
-                    "attachments": attachments_in_msg,
-                })
+                if attachments_in_msg:
+                    saved_in_memory_images.append({
+                        "u_id": u_id,
+                        "attachments": attachments_in_msg,
+                    })
+            except Exception as dl_err:
+                print(f"[{time.strftime('%H:%M:%S')}] Timeout downloading body for UID {u_id}: {dl_err}", flush=True)
                 
         if saved_in_memory_images:
             return mail, saved_in_memory_images
