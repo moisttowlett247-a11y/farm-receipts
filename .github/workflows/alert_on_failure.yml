@@ -25,5 +25,5 @@ jobs:
         password: ${{ secrets.EMAIL_PASS }}
         to: ${{ secrets.NOTIFICATION_PHONE_GATEWAY }}
         from: "Farm Bot Alert"
-        subject: "🚨 CRITICAL PIPELINE CRASH"
-        body: "The Farm Receipt Processor has crashed. Check your Actions dashboard log stream to fix credential drops or syntax errors."
+        subject: "test"
+        body: "test"
