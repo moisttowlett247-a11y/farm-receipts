@@ -5,36 +5,46 @@ on:
   schedule:
     - cron: '*/5 * * * *'
 
+# Grant permission to write/push changes back to the repository
+permissions:
+  contents: write
+
 jobs:
   run-script:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository code
-      uses: actions/checkout@v4
+      - name: Checkout repository code
+        uses: actions/checkout@v4
 
-    - name: Set up Python Environment
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: Install Official Google GenAI SDK Packages
-      run: |
-        pip install --quiet google-genai pillow
+      - name: Install Official Google GenAI SDK Packages
+        run: |
+          pip install --quiet google-genai pillow
 
-    - name: Execute Automation Script
-      env:
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
-        GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-        TRUSTED_SENDERS: ${{ secrets.TRUSTED_SENDERS }}
-      run: python farm_receipt_processor.py
+      - name: Execute Automation Script
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          TRUSTED_SENDERS: ${{ secrets.TRUSTED_SENDERS }}
+        run: python farm_receipt_processor.py
 
-    - name: Commit and Save Finished Folders to GitHub Cloud
-      run: |
-        git config --global user.name "Receipt Bot"
-        git config --global user.email "bot@github.com"
-        touch Receipt_Data.txt
-        git add Receipt_Data.txt
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-saved processed receipts [skip ci]" && git push)
+      - name: Commit and Save Finished Folders to GitHub Cloud
+        run: |
+          git config --global user.name "Receipt Bot"
+          git config --global user.email "bot@github.com"
+          touch Receipt_Data.txt
+          git add Receipt_Data.txt
+          if ! git diff --quiet || ! git diff --staged --quiet; then
+            git commit -m "Auto-saved processed receipts [skip ci]"
+            git pull --rebase origin main
+            git push
+          else
+            echo "No changes to commit."
+          fi
