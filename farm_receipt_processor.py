@@ -110,7 +110,8 @@ def download_new_receipts():
                             if image_bytes:
                                 try:
                                     pil_image = Image.open(io.BytesIO(image_bytes))
-                                    pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                                    # Increased image ceiling to 1600px for clearer OCR
+                                    pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                     attachments_in_msg.append({
                                         "image_object": pil_image,
                                         "original_name": filename or f"receipt_{u_id}.jpg",
@@ -123,7 +124,8 @@ def download_new_receipts():
                         if image_bytes:
                             try:
                                 pil_image = Image.open(io.BytesIO(image_bytes))
-                                pil_image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                                # Increased image ceiling to 1600px for clearer OCR
+                                pil_image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
                                 attachments_in_msg.append({
                                     "image_object": pil_image,
                                     "original_name": f"receipt_{u_id}.jpg",
