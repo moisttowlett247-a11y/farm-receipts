@@ -3,7 +3,7 @@ import email
 import os
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import concurrent.futures
 import socket
@@ -36,6 +36,12 @@ GEMINI_KEYS = [
 ]
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
+# Pre-initialize global client cache to prevent repeated handshakes
+CLIENT_CACHE = {}
+if GEMINI_KEYS:
+    for key in GEMINI_KEYS:
+        CLIENT_CACHE[key] = genai.Client(api_key=key)
+
 TRUSTED_SENDERS_RAW = os.getenv("TRUSTED_SENDERS", "")
 TRUSTED_SENDERS = [e.strip().lower() for e in TRUSTED_SENDERS_RAW.split(",") if e.strip()]
 
@@ -53,7 +59,10 @@ def download_new_receipts():
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
         
-        status, data = mail.uid('search', None, 'UNSEEN')
+        # Fast-path IMAP search restricted to unseen emails from the last 7 days
+        since_date = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
+        status, data = mail.uid('search', None, f'(UNSEEN SINCE "{since_date}")')
+        
         if status != 'OK' or not data or not data[0]:
             mail.logout()
             return None, []
@@ -75,7 +84,7 @@ def download_new_receipts():
             if TRUSTED_SENDERS and not any(sender in header_text for sender in TRUSTED_SENDERS):
                 continue
 
-            # Step 2: Fetch Body/Payload Stream
+            # Step 2: Fetch Body Stream
             status, fetch_data = mail.uid('fetch', u_id, '(BODY.PEEK[])')
             if status != 'OK' or not fetch_data:
                 continue
@@ -135,7 +144,9 @@ def download_new_receipts():
 # THREAD-ISOLATED VISION ENGINE
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    local_client = genai.Client(api_key=assigned_key)
+    # Reuse existing client instance
+    local_client = CLIENT_CACHE.get(assigned_key) if assigned_key else genai.Client()
+    
     prompt = (
         "Analyze this receipt image and extract data into a strict JSON layout.\n"
         "1. Identify the store name as 'vendor'.\n"
@@ -166,6 +177,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.0,
+                    tools=[],  # Suppresses AFC warning logs
                     thinking_config=types.ThinkingConfig(
                         thinking_level="MINIMAL"
                     ),
