@@ -161,16 +161,15 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (DIRECT REST API USING GEMINI 3.5 LITE)
+# THREAD-ISOLATED VISION ENGINE (DIRECT REST API USING GEMINI 3.5 FLASH LITE)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes image directly over REST using Gemini 3.5 Lite."""
+    """Processes image directly over REST using Gemini 3.5 Flash Lite."""
     buffer = io.BytesIO()
     img_obj.save(buffer, format="JPEG", quality=85)
     img_bytes = buffer.getvalue()
     base64_image = base64.b64encode(img_bytes).decode('utf-8')
 
-    # REST endpoint configured explicitly for gemini-3.5-lite
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
     prompt = (
@@ -194,10 +193,10 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "     * 'Farm:Chickens' (poultry feed, coops, heat lamps, egg cartons)\n"
         "     * 'Farm:General' (tools, general hardware, fuel, office supplies, household goods, or mixed items)\n\n"
         "4. DATE EXTRACTION & OCR PRECISION:\n"
-        "   - Extract the purchase/transaction date as 'date' (preferred format: YYYY-MM-DD).\n"
-        "   - CAUTION ON YEAR DIGITS: Thermal receipts frequently blur numbers. Carefully inspect the individual strokes of the year.\n"
-        "     * Do not confuse '2026', '2025', '2024', '2023', or '2022'. Extract the EXACT year printed on the receipt.\n"
-        "   - CAUTION ON DATE FORMATS: If a receipt lists '08/04/24', look at cashier timestamps or neighboring text to distinguish MM/DD/YY from DD/MM/YY. If ambiguous, preserve the exact printed text string.\n\n"
+        "   - Extract the exact printed transaction date as 'date' (preferred format: YYYY-MM-DD).\n"
+        "   - DO NOT default to or assume the current year. Read strictly from the physical text printed on the receipt.\n"
+        "   - CAUTION ON YEAR DIGITS: Check register lines, approval stamps, terminal numbers, and bottom footer timestamps to cross-verify the year (e.g., 2024 vs 2026).\n"
+        "   - CAUTION ON DATE FORMATS: Convert 'MM/DD/YY' accurately (e.g., '04/26/24' -> '2024-04-26'). If ambiguous, keep the exact printed text rather than inferring missing digits.\n\n"
         "5. ITEMIZED LINE ITEMS:\n"
         "   - Extract all individual purchased products into the 'items' array.\n"
         "   - For each item:\n"
