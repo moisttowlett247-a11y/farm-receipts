@@ -1,8 +1,6 @@
 import sys
 import time
-
 print(f"[{time.strftime('%H:%M:%S')}] Python process started...", flush=True)
-
 import os
 import re
 import json
@@ -11,17 +9,13 @@ import base64
 import email
 import concurrent.futures
 from datetime import datetime
-
 print(f"[{time.strftime('%H:%M:%S')}] Standard libraries loaded.", flush=True)
 
 import socket
 socket.setdefaulttimeout(60.0)
-
 import requests
 from PIL import Image, ImageOps, ImageEnhance
-
 Image.MAX_IMAGE_PIXELS = None
-
 print(f"[{time.strftime('%H:%M:%S')}] Third-party dependencies loaded.", flush=True)
 
 # =====================================================================
@@ -50,15 +44,14 @@ def setup_folders():
 def prepare_image_variants(pil_image):
     """Prepares standard full image alongside threshold-enhanced crops for faint thermal receipt text."""
     pil_image = ImageOps.exif_transpose(pil_image)
-    
+
     # Standard full image
     full_img = pil_image.copy()
     full_img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-    
     buf_full = io.BytesIO()
     full_img.save(buf_full, format="JPEG", quality=92)
     full_b64 = base64.b64encode(buf_full.getvalue()).decode('utf-8')
-    
+
     # Enhanced Grayscale Thresholding for thermal print (Top & Bottom crops)
     def enhance_crop(crop_img):
         gray = crop_img.convert("L")
@@ -87,14 +80,14 @@ def prepare_image_variants(pil_image):
 # =====================================================================
 def download_new_receipts():
     import imaplib
-
     print(f"[{time.strftime('%H:%M:%S')}] Connecting to IMAP server...", flush=True)
     saved_in_memory_images = []
+
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(EMAIL_USER, EMAIL_PASS)
         mail.select("INBOX")
-        
+
         status, data = mail.uid('search', None, 'UNSEEN')
         if status != 'OK' or not data or not data[0]:
             try:
@@ -180,17 +173,18 @@ def download_new_receipts():
                 mail.logout()
             except Exception:
                 pass
+
     except Exception as e:
         print(f"Inbox processing warning/error: {e}", flush=True)
+
     return None, []
 
 # =====================================================================
 # THREAD-ISOLATED VISION ENGINE (GEMINI 3.5 FLASH LITE WITH MULTI-CROP ANALYSIS)
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes receipt images with high-contrast date crops and strict cross-verification."""
+    """Processes receipt images with high-contrast date crops, strict cross-verification, and QuickBooks extraction."""
     full_b64, top_b64, bot_b64 = prepare_image_variants(img_obj)
-
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
     prompt = (
@@ -207,24 +201,26 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- CROSS-CHECK: Verify the date against receipt transaction lines (e.g., 'ST# ... TE# ... 08/24/25').\n"
         "- Extract raw_date_text exactly as printed (e.g., '08/24/25'). Do NOT swap month/day positions.\n"
         "- Return month, day, and 4-digit year as separate strings.\n\n"
-        "OTHER EXTRACTION RULES:\n"
+        "QUICKBOOKS ACCOUNTING EXTRACTION RULES:\n"
         "- Identify store 'vendor' name (e.g., 'Walmart').\n"
-        "- Extract grand total as float string (e.g., '145.50'). Do NOT use subtotals or tax.\n"
         "- Assign 'category' strictly to 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
+        "- Extract payment_method (e.g., 'Visa ending in 4321', 'Cash', 'Checking'). Default to 'Not Specified' if not found.\n"
+        "- Extract ref_number (Order #, Invoice #, or Trans ID). Default to 'N/A' if not found.\n"
+        "- Extract subtotal as float string (e.g., '140.00').\n"
+        "- Extract sales_tax as float string (e.g., '5.50').\n"
+        "- Extract total (grand total) as float string (e.g., '145.50'). Do NOT confuse subtotal with total.\n"
         "- Extract line items into 'items' array (name, price, weight)."
     )
 
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": full_b64}},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": top_b64}},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": bot_b64}}
-                ]
-            }
-        ],
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/jpeg", "data": full_b64}},
+                {"inline_data": {"mime_type": "image/jpeg", "data": top_b64}},
+                {"inline_data": {"mime_type": "image/jpeg", "data": bot_b64}}
+            ]
+        }],
         "generationConfig": {
             "response_mime_type": "application/json",
             "temperature": 0.0,
@@ -237,8 +233,12 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                             "type": "OBJECT",
                             "properties": {
                                 "vendor": {"type": "STRING"},
-                                "total": {"type": "STRING"},
                                 "category": {"type": "STRING"},
+                                "payment_method": {"type": "STRING"},
+                                "ref_number": {"type": "STRING"},
+                                "subtotal": {"type": "STRING"},
+                                "sales_tax": {"type": "STRING"},
+                                "total": {"type": "STRING"},
                                 "month": {"type": "STRING", "description": "2-digit month e.g. '08'"},
                                 "day": {"type": "STRING", "description": "2-digit day e.g. '24'"},
                                 "year": {"type": "STRING", "description": "4-digit year e.g. '2025' or '2026'"},
@@ -256,7 +256,11 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                     }
                                 }
                             },
-                            "required": ["vendor", "total", "category", "month", "day", "year", "raw_date_text", "items"]
+                            "required": [
+                                "vendor", "category", "payment_method", "ref_number", 
+                                "subtotal", "sales_tax", "total", "month", "day", "year", 
+                                "raw_date_text", "items"
+                            ]
                         }
                     }
                 },
@@ -273,7 +277,6 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
             response = requests.post(url, headers=headers, json=payload, timeout=25)
             response.raise_for_status()
             res_json = response.json()
-            
             text_response = res_json['candidates'][0]['content']['parts'][0]['text']
             return json.loads(text_response.strip())
         except Exception as e:
@@ -290,37 +293,40 @@ def process_single_email_group(args):
     email_package, assigned_key = args
     attachments = email_package["attachments"]
     u_id = email_package["u_id"]
+
     gathered_log_blocks = []
-    
+
     for attachment in attachments:
         img_obj = attachment["image_object"]
         filename = attachment["original_name"]
-        
+
         data = analyze_image_with_gemini(img_obj, assigned_key)
         img_obj.close()
-        
+
         if not data or "receipts" not in data:
             continue
-            
+
         receipts_found = data.get("receipts", [])
-        
+
         for idx, receipt in enumerate(receipts_found, start=1):
             vendor = re.sub(r'[\\/*?:"<>|]', "", receipt.get('vendor', 'Unknown_Vendor'))[:20].strip()
             category = receipt.get('category', 'Farm:General')
-            total = receipt.get('total', '[Amount Not Found]')
+            payment_method = receipt.get('payment_method', 'Not Specified').strip()
+            ref_number = receipt.get('ref_number', 'N/A').strip()
+            subtotal = receipt.get('subtotal', '').strip()
+            sales_tax = receipt.get('sales_tax', '').strip()
+            total = receipt.get('total', '[Amount Not Found]').strip()
             raw_date_line = receipt.get('raw_date_text', '').strip()
             items_list = receipt.get('items', [])
-            
+
             # --- MULTI-YEAR DATE EXTRACTION & VALIDATION ENGINE ---
             receipt_date = None
 
             # Attempt 1: Regex parse from raw text string
             regex_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', raw_date_line)
-
             if regex_match:
                 m_str, d_str, y_str = regex_match.groups()
                 m_int, d_int = int(m_str), int(d_str)
-                
                 if len(y_str) == 2:
                     y_str = f"20{y_str}"
                 y_int = int(y_str)
@@ -334,7 +340,6 @@ def process_single_email_group(args):
                 m_str = receipt.get('month', '').strip().zfill(2)
                 d_str = receipt.get('day', '').strip().zfill(2)
                 y_str = receipt.get('year', '').strip()
-
                 if len(y_str) == 2:
                     y_str = f"20{y_str}"
 
@@ -347,9 +352,14 @@ def process_single_email_group(args):
             if not receipt_date:
                 receipt_date = f"[VERIFY DATE: {raw_date_line or 'Unclear'}]"
 
+            # Currency Formatting
             if total and not str(total).startswith('$'):
                 total = f"${total}"
-                
+            if subtotal and not str(subtotal).startswith('$'):
+                subtotal = f"${subtotal}"
+            if sales_tax and not str(sales_tax).startswith('$'):
+                sales_tax = f"${sales_tax}"
+
             item_lines = []
             if items_list:
                 for item in items_list:
@@ -357,7 +367,7 @@ def process_single_email_group(args):
                         name = item.get('name', 'Unknown Item')
                         price = item.get('price', '').strip()
                         weight = item.get('weight', '').strip()
-                        
+
                         price_str = f" - ${price}" if price else ""
                         weight_str = f" ({weight})" if weight else ""
                         item_lines.append(f"  - {name}{price_str}{weight_str}\n")
@@ -366,22 +376,26 @@ def process_single_email_group(args):
                 formatted_items = "".join(item_lines)
             else:
                 formatted_items = "  - [No Items Found]\n"
-            
+
             suffix = f"_r{idx}" if len(receipts_found) > 1 else ""
             new_filename = f"{category.replace(':', '-')}__{vendor.replace(' ', '_')}{suffix}___{filename}"
-            
+
             log_entry = (
                 f"File Name: {new_filename}\n"
                 f"Category: {category}\n"
                 f"Vendor: {vendor}\n"
                 f"Receipt Date: {receipt_date}\n"
                 f"Date Source Line: {raw_date_line}\n"
+                f"Payment Method: {payment_method}\n"
+                f"Reference #: {ref_number}\n"
+                f"Subtotal: {subtotal or 'N/A'}\n"
+                f"Sales Tax: {sales_tax or '$0.00'}\n"
                 f"Amount: {total}\n"
                 f"Items:\n{formatted_items}"
                 f"--------------------------------------------------\n"
             )
             gathered_log_blocks.append(log_entry)
-        
+
     has_success = len(gathered_log_blocks) > 0
     return {"u_id": u_id, "success": has_success, "blocks": gathered_log_blocks}
 
@@ -392,19 +406,21 @@ def process_receipts(mail_session, email_packages, processed_dir):
     log_file_path = os.path.join(processed_dir, "Receipt_Data.txt")
     extracted_records = []
     worker_inputs = []
-    
+
     for idx, package in enumerate(email_packages):
         assigned_key = GEMINI_KEYS[idx % len(GEMINI_KEYS)] if GEMINI_KEYS else None
         worker_inputs.append((package, assigned_key))
-        
+
     pool_workers = min(len(email_packages) * 2, 10)
-    
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
         futures = {executor.submit(process_single_email_group, w_in): w_in for w_in in worker_inputs}
+
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
                 u_id = result["u_id"]
+
                 if result["success"]:
                     extracted_records.extend(result["blocks"])
                     if mail_session:
@@ -414,9 +430,10 @@ def process_receipts(mail_session, email_packages, processed_dir):
                             pass
                 else:
                     print(f"⚠️ Total failure on UID {u_id}. Keeping unread.", flush=True)
+
             except Exception as e:
                 print(f"Thread processor error: {e}", flush=True)
-                
+
     if extracted_records:
         def get_sorting_date(log_text):
             match = re.search(r"Receipt Date:\s*([\d:\s\w\[\]\-]+)", log_text)
@@ -425,17 +442,17 @@ def process_receipts(mail_session, email_packages, processed_dir):
                 if re.match(r"^\d{4}-\d{2}-\d{2}", date_str):
                     return date_str
             return "9999-99-99"
-            
+
         extracted_records.sort(key=get_sorting_date)
-        
+
         with open(log_file_path, "a", encoding="utf-8") as log:
             log.write(f"\n==================================================\n")
             log.write(f"BATCH RUN DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             log.write(f"==================================================\n")
             log.writelines(extracted_records)
-            
+
         print(f"[{time.strftime('%H:%M:%S')}] Processed and logged {len(extracted_records)} receipts.", flush=True)
-        
+
     if mail_session:
         try:
             mail_session.close()
@@ -450,6 +467,7 @@ if __name__ == "__main__":
     print(f"[{time.strftime('%H:%M:%S')}] Free Farm Receipt Processor Initialized.", flush=True)
     processed_folder = setup_folders()
     mail_session, email_queue = download_new_receipts()
+
     if email_queue:
         process_receipts(mail_session, email_queue, processed_folder)
     else:
