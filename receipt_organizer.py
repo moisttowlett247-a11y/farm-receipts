@@ -11,8 +11,8 @@ KNOWN_HEADERS = {
 
 def consolidate_items_by_barcode(block_text):
     """
-    Scans line items under 'Items:' for UPC/barcode digits (6-14 digits).
-    Consolidates identical barcode entries, sums their prices, and tags quantities.
+    Scans line items under 'Items:' for standard UPC/EAN barcodes (8 to 14 digits).
+    Consolidates identical barcode entries WITHIN the same receipt, sums prices, and tags quantities.
     """
     lines = block_text.splitlines()
     output_lines = []
@@ -41,8 +41,8 @@ def consolidate_items_by_barcode(block_text):
                     break
 
                 if sub_line.startswith("  - ") or sub_line.startswith("- "):
-                    # Extract barcode sequence (6 to 14 digits)
-                    barcode_match = re.search(r"\b(\d{6,14})\b", sub_line)
+                    # Strictly match 8 to 14 digit UPC/EAN barcodes
+                    barcode_match = re.search(r"\b(\d{8,14})\b", sub_line)
                     
                     if barcode_match:
                         barcode = barcode_match.group(1)
@@ -55,7 +55,7 @@ def consolidate_items_by_barcode(block_text):
                         qty_match = re.search(r"\(Qty:\s*(\d+)\)", sub_line, re.IGNORECASE)
                         qty = int(qty_match.group(1)) if qty_match else 1
                         
-                        # Clean item base string (strip price and quantity tags)
+                        # Clean item base string
                         clean_base = re.sub(r"\s*-\s*\$\d+(?:\.\d+)?", "", sub_line)
                         clean_base = re.sub(r"\$\d+(?:\.\d+)?", "", clean_base)
                         clean_base = re.sub(r"\(Qty:\s*\d+\)", "", clean_base, flags=re.IGNORECASE).rstrip()
@@ -76,7 +76,7 @@ def consolidate_items_by_barcode(block_text):
                 
                 i += 1
 
-            # Write consolidated barcode items with summed total and (Qty: X)
+            # Output consolidated items
             for item in seen_barcodes.values():
                 base_text = item['base_text']
                 tot_p = item['total_price']
@@ -86,7 +86,6 @@ def consolidate_items_by_barcode(block_text):
                 qty_str = f" (Qty: {q_val})" if q_val > 1 else ""
                 output_lines.append(f"{base_text}{price_str}{qty_str}")
 
-            # Write non-barcode items
             for item_line in non_barcode_items:
                 output_lines.append(item_line)
 
@@ -99,11 +98,16 @@ def consolidate_items_by_barcode(block_text):
 
 def sort_and_deduplicate_receipt_file():
     if not os.path.exists(DATA_FILE):
-        print(f"File {DATA_FILE} not found.")
+        open(DATA_FILE, "a", encoding="utf-8").close()
+        print(f"Created empty {DATA_FILE} because it did not exist.")
         return
 
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         content = f.read()
+
+    if not content.strip():
+        print(f"{DATA_FILE} is empty. Nothing to sort.")
+        return
 
     raw_blocks = re.split(r"-{50,}", content)
 
@@ -115,15 +119,15 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Step 1: Consolidate barcode items, sum totals, and update quantities
+        # Step 1: Consolidate duplicate barcode items within the block
         consolidated_block = consolidate_items_by_barcode(block_str)
 
         # Step 2: Unique Fingerprint for whole-receipt deduplication
-        file_m = re.search(r"File Name:\s*(.*)", consolidated_block)
-        ref_m = re.search(r"Reference #:\s*(.*)", consolidated_block)
-        vendor_m = re.search(r"Vendor:\s*(.*)", consolidated_block)
-        date_m = re.search(r"Receipt Date:\s*(.*)", consolidated_block)
-        amount_m = re.search(r"Amount:\s*(.*)", consolidated_block)
+        file_m = re.search(r"File Name:\s*(.*)", consolidated_block, re.IGNORECASE)
+        ref_m = re.search(r"Reference #:\s*(.*)", consolidated_block, re.IGNORECASE)
+        vendor_m = re.search(r"Vendor:\s*(.*)", consolidated_block, re.IGNORECASE)
+        date_m = re.search(r"Receipt Date:\s*(.*)", consolidated_block, re.IGNORECASE)
+        amount_m = re.search(r"Amount:\s*(.*)", consolidated_block, re.IGNORECASE)
 
         file_id = file_m.group(1).strip().lower() if file_m else ""
         ref_id = ref_m.group(1).strip().lower() if ref_m else ""
@@ -131,19 +135,24 @@ def sort_and_deduplicate_receipt_file():
         date_id = date_m.group(1).strip().lower() if date_m else ""
         amount_id = amount_m.group(1).strip().lower() if amount_m else ""
 
-        if vendor_id and date_id and amount_id:
+        # Build precise fingerprint using available identifiers
+        if file_id or ref_id:
             fingerprint = f"{file_id}|{ref_id}|{vendor_id}|{date_id}|{amount_id}"
+        elif vendor_id and date_id and amount_id:
+            fingerprint = f"{vendor_id}|{date_id}|{amount_id}"
         else:
+            # Hash/use exact string content if headers are missing
             fingerprint = re.sub(r"\s+", "", consolidated_block).lower()
 
         if fingerprint in seen_fingerprints:
+            print(f"Skipping duplicate receipt fingerprint: {fingerprint[:60]}...")
             continue
 
         seen_fingerprints.add(fingerprint)
         receipt_blocks.append(consolidated_block)
 
     def get_sorting_date(block_text):
-        match = re.search(r"Receipt Date:\s*([\d:\s\w\[\]\-]+)", block_text)
+        match = re.search(r"Receipt Date:\s*([\d:\s\w\[\]\-]+)", block_text, re.IGNORECASE)
         if match:
             date_str = match.group(1).strip()
             if re.match(r"^\d{4}-\d{2}-\d{2}", date_str):
