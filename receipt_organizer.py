@@ -26,33 +26,29 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Extract primary metadata fields
+        # Extract specific identifying markers
         file_m = re.search(r"File Name:\s*(.*)", block_str, re.IGNORECASE)
         ref_m = re.search(r"Reference #:\s*(.*)", block_str, re.IGNORECASE)
-        vendor_m = re.search(r"Vendor:\s*(.*)", block_str, re.IGNORECASE)
-        date_m = re.search(r"Receipt Date:\s*(.*)", block_str, re.IGNORECASE)
         amount_m = re.search(r"Amount:\s*(.*)", block_str, re.IGNORECASE)
+        date_m = re.search(r"Receipt Date:\s*(.*)", block_str, re.IGNORECASE)
 
         file_id = file_m.group(1).strip().lower() if file_m else ""
         ref_id = ref_m.group(1).strip().lower() if ref_m else ""
-        vendor_id = vendor_m.group(1).strip().lower() if vendor_m else ""
-        date_id = date_m.group(1).strip().lower() if date_m else ""
         amount_id = amount_m.group(1).strip().lower() if amount_m else ""
+        date_id = date_m.group(1).strip().lower() if date_id else ""
 
-        # Priority 1: File Name / Reference # (Guarantees unique files are never dropped)
+        # CRITICAL FIX: Preserve the full multi-receipt filename suffix (_r1, _r2, etc.) 
+        # so different receipts extracted from the same image are treated as separate files.
         if file_id:
-            fingerprint = f"file:{file_id}"
+            fingerprint = f"file:{file_id}|amount:{amount_id}|date:{date_id}"
         elif ref_id:
             fingerprint = f"ref:{ref_id}"
-        # Priority 2: Vendor + Date + Amount matching
-        elif vendor_id and date_id and amount_id:
-            fingerprint = f"vda:{vendor_id}|{date_id}|{amount_id}"
-        # Priority 3: Block index fallback if metadata is unparseable
         else:
-            fingerprint = f"block_{idx}:" + re.sub(r"\s+", "", block_str).lower()
+            # Fallback: Hash the entire unique text body of this specific receipt block
+            fingerprint = f"block:{re.sub(r'\s+', '', block_str).lower()}"
 
         if fingerprint in seen_fingerprints:
-            print(f"Skipping duplicate receipt block: {fingerprint[:60]}...")
+            print(f"Skipping true duplicate receipt block: {file_id}")
             continue
 
         seen_fingerprints.add(fingerprint)
