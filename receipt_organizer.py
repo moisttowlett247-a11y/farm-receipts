@@ -26,7 +26,7 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Extract specific identifying markers
+        # Extract metadata fields
         file_m = re.search(r"File Name:\s*(.*)", block_str, re.IGNORECASE)
         ref_m = re.search(r"Reference #:\s*(.*)", block_str, re.IGNORECASE)
         amount_m = re.search(r"Amount:\s*(.*)", block_str, re.IGNORECASE)
@@ -35,17 +35,16 @@ def sort_and_deduplicate_receipt_file():
         file_id = file_m.group(1).strip().lower() if file_m else ""
         ref_id = ref_m.group(1).strip().lower() if ref_m else ""
         amount_id = amount_m.group(1).strip().lower() if amount_m else ""
-        date_id = date_m.group(1).strip().lower() if date_id else ""
+        date_id = date_m.group(1).strip().lower() if date_m else ""
 
-        # CRITICAL FIX: Preserve the full multi-receipt filename suffix (_r1, _r2, etc.) 
-        # so different receipts extracted from the same image are treated as separate files.
+        # Build fingerprint safely without backslashes inside f-string expressions
         if file_id:
             fingerprint = f"file:{file_id}|amount:{amount_id}|date:{date_id}"
         elif ref_id:
             fingerprint = f"ref:{ref_id}"
         else:
-            # Fallback: Hash the entire unique text body of this specific receipt block
-            fingerprint = f"block:{re.sub(r'\s+', '', block_str).lower()}"
+            cleaned_block = re.sub(r"\s+", "", block_str).lower()
+            fingerprint = f"block_{idx}:{cleaned_block}"
 
         if fingerprint in seen_fingerprints:
             print(f"Skipping true duplicate receipt block: {file_id}")
