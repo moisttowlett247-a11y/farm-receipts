@@ -33,9 +33,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python farm_receipt_processor.py
 
-      - name: Sort and Deduplicate Receipts
-        run: python receipt_organizer.py
-
       - name: Consolidate Receipt Items
         run: python item_consolidator.py
 
@@ -47,6 +44,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Update, sort, and consolidate receipt data [skip ci]"
+            git commit -m "Update and consolidate receipt data [skip ci]"
             git push
           fi
