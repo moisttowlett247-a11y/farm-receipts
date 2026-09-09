@@ -3,10 +3,16 @@ import re
 
 DATA_FILE = "Receipt_Data.txt"
 
+KNOWN_HEADERS = {
+    "file name:", "category:", "vendor:", "receipt date:", 
+    "date source line:", "payment method:", "reference #:", 
+    "subtotal:", "sales tax:", "amount:", "items:"
+}
+
 def consolidate_block_items(block_text):
     """
     Parses items inside a single receipt block.
-    Consolidates identical item names while guaranteeing zero item loss.
+    Consolidates identical item names and quantities without dropping any lines.
     """
     lines = block_text.splitlines()
     output_lines = []
@@ -15,40 +21,40 @@ def consolidate_block_items(block_text):
     while i < len(lines):
         line = lines[i]
         
-        # Check if we hit the Items header
-        if line.strip().startswith("Items:"):
+        if line.strip().lower().startswith("items:"):
             output_lines.append(line)
             i += 1
             
             items_dict = {}
             unmatched_lines = []
             
-            # Read until the end of the block or next section
             while i < len(lines):
                 sub_line = lines[i]
+                stripped_sub = sub_line.strip()
                 
-                # Exit item processing if we hit a metadata key, boundary, or non-item header
-                if sub_line.startswith("----------------") or sub_line.startswith("============="):
+                # Exit item loop ONLY on section boundaries or explicit known metadata keys
+                if stripped_sub.startswith("----------------") or stripped_sub.startswith("============="):
                     break
-                if re.match(r"^[A-Z][a-zA-Z\s]+:\s*", sub_line) and not sub_line.strip().startswith("Items:"):
+                
+                # Check if line is a known metadata key (e.g., "Amount:", "Vendor:")
+                key_prefix = stripped_sub.split(":", 1)[0].lower() + ":" if ":" in stripped_sub else ""
+                if key_prefix in KNOWN_HEADERS:
                     break
 
-                # Process potential item lines (starting with spaces/dashes or standard list formatting)
-                if sub_line.strip().startswith("-") or sub_line.startswith("  "):
-                    # Extract quantity if present: (Qty: X)
+                # Process valid item lines
+                if sub_line.startswith("  - ") or sub_line.startswith("- "):
                     qty_match = re.search(r"\(Qty:\s*(\d+)\)", sub_line, re.IGNORECASE)
                     qty = int(qty_match.group(1)) if qty_match else 1
 
-                    # Extract price if present: - $XX.XX or $XX.XX
                     price_match = re.search(r"\$\s*(\d+(?:\.\d+)?)", sub_line)
                     price = float(price_match.group(1)) if price_match else 0.0
 
-                    # Clean name by stripping bullet points, prices, and Qty tags
+                    # Extract clean item name
                     clean_name = sub_line
-                    clean_name = re.sub(r"^\s*-\s*", "", clean_name)  # remove leading dash/spaces
-                    clean_name = re.sub(r"\s*-\s*\$\d+(?:\.\d+)?", "", clean_name)  # remove - $price
-                    clean_name = re.sub(r"\$\d+(?:\.\d+)?", "", clean_name)  # remove $price
-                    clean_name = re.sub(r"\(Qty:\s*\d+\)", "", clean_name, flags=re.IGNORECASE)  # remove (Qty: X)
+                    clean_name = re.sub(r"^\s*-\s*", "", clean_name)
+                    clean_name = re.sub(r"\s*-\s*\$\d+(?:\.\d+)?", "", clean_name)
+                    clean_name = re.sub(r"\$\d+(?:\.\d+)?", "", clean_name)
+                    clean_name = re.sub(r"\(Qty:\s*\d+\)", "", clean_name, flags=re.IGNORECASE)
                     clean_name = clean_name.strip()
 
                     if clean_name:
@@ -69,7 +75,7 @@ def consolidate_block_items(block_text):
                 
                 i += 1
 
-            # Output all consolidated items
+            # Output consolidated items
             for item in items_dict.values():
                 name = item['original_name']
                 q_val = item['qty']
@@ -79,7 +85,6 @@ def consolidate_block_items(block_text):
                 qty_str = f" (Qty: {q_val})" if q_val > 1 else ""
                 output_lines.append(f"  - {name}{price_str}{qty_str}")
 
-            # Output any unmatched lines so zero data is lost
             for un_line in unmatched_lines:
                 output_lines.append(un_line)
 
@@ -98,7 +103,6 @@ def sort_and_deduplicate_receipt_file():
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Split cleanly by 50-dash separator boundary
     raw_blocks = re.split(r"-{50,}", content)
 
     receipt_blocks = []
@@ -109,16 +113,23 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Step 1: Consolidate items without dropping any lines
         consolidated_block = consolidate_block_items(block_str)
 
-        # Step 2: Strict Deduplication Fingerprint (Vendor + Date + Amount)
+        # Unique Fingerprint using File Name / Ref # + Vendor + Date + Amount
+        file_m = re.search(r"File Name:\s*(.*)", consolidated_block)
+        ref_m = re.search(r"Reference #:\s*(.*)", consolidated_block)
         vendor_m = re.search(r"Vendor:\s*(.*)", consolidated_block)
         date_m = re.search(r"Receipt Date:\s*(.*)", consolidated_block)
         amount_m = re.search(r"Amount:\s*(.*)", consolidated_block)
 
-        if vendor_m and date_m and amount_m:
-            fingerprint = f"{vendor_m.group(1).strip().lower()}|{date_m.group(1).strip().lower()}|{amount_m.group(1).strip().lower()}"
+        file_id = file_m.group(1).strip().lower() if file_m else ""
+        ref_id = ref_m.group(1).strip().lower() if ref_m else ""
+        vendor_id = vendor_m.group(1).strip().lower() if vendor_m else ""
+        date_id = date_m.group(1).strip().lower() if date_m else ""
+        amount_id = amount_m.group(1).strip().lower() if amount_m else ""
+
+        if vendor_id and date_id and amount_id:
+            fingerprint = f"{file_id}|{ref_id}|{vendor_id}|{date_id}|{amount_id}"
         else:
             fingerprint = re.sub(r"\s+", "", consolidated_block).lower()
 
@@ -128,7 +139,6 @@ def sort_and_deduplicate_receipt_file():
         seen_fingerprints.add(fingerprint)
         receipt_blocks.append(consolidated_block)
 
-    # Helper function to sort chronologically by Receipt Date
     def get_sorting_date(block_text):
         match = re.search(r"Receipt Date:\s*([\d:\s\w\[\]\-]+)", block_text)
         if match:
@@ -139,7 +149,6 @@ def sort_and_deduplicate_receipt_file():
 
     receipt_blocks.sort(key=get_sorting_date)
 
-    # Rewrite output back to Receipt_Data.txt
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         for block in receipt_blocks:
             f.write(block + "\n--------------------------------------------------\n")
