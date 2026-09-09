@@ -210,11 +210,7 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- Extract sales_tax as float string (e.g., '5.50').\n"
         "- Extract total (grand total) as float string (e.g., '145.50'). Do NOT confuse subtotal with total.\n"
         "- Extract line items into 'items' array.\n"
-        "- STRICT ITEM CONSOLIDATION & QUANTITY RULE:\n"
-        "  1. Scan the full receipt for ALL occurrences of each item, whether printed on a single line with a multiplier (e.g. '2 @ 0.44') OR printed on separate individual lines (e.g. two separate lines for 'DG RSNC PEP' or 'ITAL SLCE').\n"
-        "  2. Combine identical items into ONE single line entry in the JSON 'items' list.\n"
-        "  3. Set 'qty' to the total count purchased across the whole receipt (e.g., '2').\n"
-        "  4. Set 'price' to the TOTAL COMBINED price for all units of that item (e.g. if one Italian bread is $0.88 and you bought 2, set price to '1.76').\n"
+        "- ITEM EXTRACTION RULE: Extract every printed item on the receipt. For 'qty', extract printed multipliers if present (e.g. if '2 @ 0.44' appears, set qty to '2'). Set 'price' to the total line price printed for that entry.\n"
         "- CLEAN ITEM DESCRIPTION: Exclude store barcode numbers, UPC codes, or tax flags from the item name."
     )
 
@@ -255,8 +251,8 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                         "type": "OBJECT",
                                         "properties": {
                                             "name": {"type": "STRING", "description": "Clean item description without barcodes"},
-                                            "qty": {"type": "STRING", "description": "Total quantity purchased, default to '1'"},
-                                            "price": {"type": "STRING", "description": "Total combined price for this line item"}
+                                            "qty": {"type": "STRING", "description": "Quantity purchased, default to '1'"},
+                                            "price": {"type": "STRING", "description": "Price for this line item"}
                                         },
                                         "required": ["name", "qty", "price"]
                                     }
@@ -323,7 +319,37 @@ def process_single_email_group(args):
             sales_tax = receipt.get('sales_tax', '').strip()
             total = receipt.get('total', '[Amount Not Found]').strip()
             raw_date_line = receipt.get('raw_date_text', '').strip()
-            items_list = receipt.get('items', [])
+            raw_items_list = receipt.get('items', [])
+
+            # --- PYTHON-LEVEL CONSOLIDATION & DEDUPLICATION ENGINE ---
+            consolidated_items = {}
+            for item in raw_items_list:
+                if isinstance(item, dict):
+                    raw_name = item.get('name', 'Unknown Item').strip()
+                    clean_name = re.sub(r'\s+', ' ', raw_name).upper()
+                    
+                    try:
+                        q_val = int(re.sub(r'[^\d]', '', str(item.get('qty', '1'))))
+                    except ValueError:
+                        q_val = 1
+                    if q_val < 1:
+                        q_val = 1
+
+                    raw_price = str(item.get('price', '0')).replace('$', '').strip()
+                    try:
+                        p_val = float(re.sub(r'[^\d.]', '', raw_price))
+                    except ValueError:
+                        p_val = 0.0
+
+                    if clean_name in consolidated_items:
+                        consolidated_items[clean_name]['qty'] += q_val
+                        consolidated_items[clean_name]['total_price'] += p_val
+                    else:
+                        consolidated_items[clean_name] = {
+                            'name': raw_name,
+                            'qty': q_val,
+                            'total_price': p_val
+                        }
 
             # --- MULTI-YEAR DATE EXTRACTION & VALIDATION ENGINE ---
             receipt_date = None
@@ -367,19 +393,16 @@ def process_single_email_group(args):
                 sales_tax = f"${sales_tax}"
 
             item_lines = []
-            if items_list:
-                for item in items_list:
-                    if isinstance(item, dict):
-                        name = item.get('name', 'Unknown Item').strip()
-                        qty = item.get('qty', '1').strip()
-                        price = item.get('price', '').strip()
+            if consolidated_items:
+                for c_item in consolidated_items.values():
+                    name = c_item['name']
+                    qty = c_item['qty']
+                    tot_price = c_item['total_price']
 
-                        price_str = f" - ${price}" if price else ""
-                        qty_str = f" (Qty: {qty})" if qty and qty != '1' else ""
+                    price_str = f" - ${tot_price:.2f}" if tot_price > 0 else ""
+                    qty_str = f" (Qty: {qty})" if qty > 1 else ""
 
-                        item_lines.append(f"  - {name}{price_str}{qty_str}\n")
-                    else:
-                        item_lines.append(f"  - {item}\n")
+                    item_lines.append(f"  - {name}{price_str}{qty_str}\n")
                 formatted_items = "".join(item_lines)
             else:
                 formatted_items = "  - [No Items Found]\n"
