@@ -1,0 +1,109 @@
+
+==================================================
+BATCH RUN DATE: 2026-09-09 02:03:10
+==================================================
+File Name: Farm-Chickens__Walmart_Supercenter_r2___1000002293.jpg
+Category: Farm:Chickens
+Vendor: Walmart Supercenter
+Receipt Date: 2026-08-24
+Date Source Line: 08/24/26
+Payment Method: Debit
+Reference #: 623642288971
+Subtotal: $145.50
+Sales Tax: $10.2500
+Amount: $145.50
+Items:
+  - DR PEPPER 078000082130 - $9.97
+  - FRENCH BREAD 200980000000 F - $0.44
+  - FRENCH BREAD 200980000000 F - $0.44
+  - ITAL SLCE 200160000000 F - $0.88
+  - ITAL SLCE 200160000000 F - $0.88
+  - 50CT WIPE 194346604740 - $1.17
+  - 50CT WIPE 194346604740 - $1.17
+  - GV GR T 40 078742013160 F - $2.78
+  - GV GR T 40 078742013160 F - $2.78
+  - 14 RR NUTR 071190006970 - $14.87
+  - ** VOIDED ENTRY ** - $0.00
+  - GV 3T EVERYD 194343372550 - $4.74
+  - TRD ROTI CLD 262810000000 F - $3.97
+  - TRD ROTI CLD 262810000000 F - $3.97
+  - COTT CMFT 6M 036000557070 - $6.98
+  - GV SPAG 16OZ 078742203070 F - $1.24
+  - GV SPAG 16OZ 078742203070 F - $1.24
+  - KFT SHRD 16Z 840597091060 F - $5.64
+  - PAPRIKA 078742094450 F - $1.50
+  - GV CHK 32OZ 078742020620 F - $1.50
+  - GV CHK 32OZ 078742020620 F - $1.50
+  - GV FAM SIZE 078742094450 F - $1.72
+  - GV FAM SIZE 078742000680 F - $3.72
+  - SOUR CREAM 073420002420 F - $2.42
+  - FRG PARMESAN 041716887270 F - $3.06
+  - FRG UNSLT BTR 078742374270 F - $11.52
+  - FF 12PK CAT 050000869960 - $11.52
+  - GV RICE 80OZ 078742352060 F - $3.37
+  - CH DRK BRN 015800064320 F - $3.74
+  - DG RSNC PEP 071921823790 F - $5.97
+  - DG RSNC PEP 071921823790 F - $5.97
+  - DONUTS 200000000000 F - $4.18
+--------------------------------------------------
+File Name: Farm-General__The_Tool_Store_r1___1000002293.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Date Source Line: Sep 04, 2026
+Payment Method: Debit
+Reference #: 2-12380
+Subtotal: $93.99
+Sales Tax: $6.11
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor 1 x $50.00 - $50.00
+  - Regal air hose 1 x $26.00 - $26.00
+  - Regal quick connect set 1 x $6.99 - $6.99
+  - Air chuck used 1 x $6.00 - $6.00
+  - Tape 1 x $2.00 - $2.00
+  - Air gauge 1 x $3.00 - $3.00
+--------------------------------------------------
+File Name: Farm-Cows__Walmart_Supercenter_r3___1000002293.jpg
+Category: Farm:Cows
+Vendor: Walmart Supercenter
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Payment Method: Debit
+Reference #: 62514077876
+Subtotal: $98.71
+Sales Tax: $10.2500
+Amount: $105.07
+Items:
+  - GV SWICT WHT 078742012280 F - $1.48
+  - DR PEPPER 078000082130 - $9.97
+  - PLUG REFILL 030772034260 - $9.94
+  - GV GR T 40 078742013160 F - $2.84
+  - GV GR T 40 078742013160 F - $2.84
+  - COOKI DOUGH 01800001820 F - $3.86
+  - GRD BTRMLK 01800001820 F - $2.97
+  - GRD BTRMLK 01800001820 F - $2.97
+  - DONUTS 200100000000 F - $4.18
+  - COTT CMFT 6M 036000557070 - $5.97
+  - GV 2D EVEYRD 194343372550 - $6.98
+  - DG RSNC PEP 071921823790 F - $2.96
+  - SMTFD WH CHD 028400341430 F - $5.94
+  - HVRANCH 360Z 071100006680 F - $7.38
+  - BBQ SAUCE 01340532310 F - $3.24
+  - SUGAR GRANU 078742371170 F - $7.38
+  - PC 300CT WPE 194345403790 H - $6.87
+  - 1LB ROLL SSQ 079000115530 F - $4.97
+--------------------------------------------------
+File Name: Farm-General__Walmart_Supercenter_r4___1000002293.jpg
+Category: Farm:General
+Vendor: Walmart Supercenter
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Payment Method: Debit
+Reference #: 8582 I 0
+Subtotal: $34.48
+Sales Tax: $10.2500
+Amount: $38.01
+Items:
+  - MENS SHOES 605388537440 - $34.48
+--------------------------------------------------
