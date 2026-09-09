@@ -74,3 +74,16 @@ Amount: $38.01
 Items:
   - MENS SHOES 605388537440 - $34.48
 --------------------------------------------------
+File Name: Farm-Chickens__Walmart_r4___1000002293.jpg
+Category: Farm:Chickens
+Vendor: Walmart
+Receipt Date: 2026-09-08
+Date Source Line: 09/08/26
+Payment Method: Debit
+Reference #: 28040274
+Subtotal: $34.48
+Sales Tax: $10.2500
+Amount: $38.01
+Items:
+  - MENS SHOES 605388537440 - $34.48
+--------------------------------------------------
