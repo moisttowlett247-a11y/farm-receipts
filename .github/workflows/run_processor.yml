@@ -1,4 +1,4 @@
-name: Process and Organize Farm Receipts
+name: Process Farm Receipts
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  process-and-organize:
+  process-receipts:
     runs-on: ubuntu-latest
 
     steps:
@@ -33,9 +33,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python farm_receipt_processor.py
 
-      - name: Consolidate Receipt Items
-        run: python item_consolidator.py
-
       - name: Commit and Push Changes
         run: |
           git config --global user.name "github-actions[bot]"
@@ -44,6 +41,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Update and consolidate receipt data [skip ci]"
+            git commit -m "Update receipt data [skip ci]"
             git push
           fi
