@@ -128,7 +128,7 @@ def sort_and_deduplicate_receipt_file():
         file_id = file_m.group(1).strip().lower() if file_m else ""
         ref_id = ref_m.group(1).strip().lower() if ref_m else ""
         vendor_id = vendor_m.group(1).strip().lower() if vendor_m else ""
-        date_id = date_m.group(1).strip().lower() if date_id else ""
+        date_id = date_m.group(1).strip().lower() if date_m else ""
         amount_id = amount_m.group(1).strip().lower() if amount_m else ""
 
         if vendor_id and date_id and amount_id:
