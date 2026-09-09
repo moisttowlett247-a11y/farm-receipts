@@ -11,7 +11,7 @@ KNOWN_HEADERS = {
 
 def consolidate_items_by_barcode(block_text):
     """
-    Scans line items under 'Items:' for standard UPC/EAN barcodes (8 to 14 digits).
+    Scans line items under 'Items:' for UPC/EAN barcodes (8-14 digits).
     Consolidates identical barcode entries WITHIN the same receipt, sums prices, and tags quantities.
     """
     lines = block_text.splitlines()
@@ -41,21 +41,17 @@ def consolidate_items_by_barcode(block_text):
                     break
 
                 if sub_line.startswith("  - ") or sub_line.startswith("- "):
-                    # Strictly match 8 to 14 digit UPC/EAN barcodes
                     barcode_match = re.search(r"\b(\d{8,14})\b", sub_line)
                     
                     if barcode_match:
                         barcode = barcode_match.group(1)
                         
-                        # Extract price ($XX.XX)
                         price_match = re.search(r"\$\s*(\d+(?:\.\d+)?)", sub_line)
                         price = float(price_match.group(1)) if price_match else 0.0
                         
-                        # Extract existing quantity if present
                         qty_match = re.search(r"\(Qty:\s*(\d+)\)", sub_line, re.IGNORECASE)
                         qty = int(qty_match.group(1)) if qty_match else 1
                         
-                        # Clean item base string
                         clean_base = re.sub(r"\s*-\s*\$\d+(?:\.\d+)?", "", sub_line)
                         clean_base = re.sub(r"\$\d+(?:\.\d+)?", "", clean_base)
                         clean_base = re.sub(r"\(Qty:\s*\d+\)", "", clean_base, flags=re.IGNORECASE).rstrip()
@@ -76,7 +72,6 @@ def consolidate_items_by_barcode(block_text):
                 
                 i += 1
 
-            # Output consolidated items
             for item in seen_barcodes.values():
                 base_text = item['base_text']
                 tot_p = item['total_price']
@@ -119,33 +114,21 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Step 1: Consolidate duplicate barcode items within the block
         consolidated_block = consolidate_items_by_barcode(block_str)
 
-        # Step 2: Unique Fingerprint for whole-receipt deduplication
+        # Extract File Name field
         file_m = re.search(r"File Name:\s*(.*)", consolidated_block, re.IGNORECASE)
-        ref_m = re.search(r"Reference #:\s*(.*)", consolidated_block, re.IGNORECASE)
-        vendor_m = re.search(r"Vendor:\s*(.*)", consolidated_block, re.IGNORECASE)
-        date_m = re.search(r"Receipt Date:\s*(.*)", consolidated_block, re.IGNORECASE)
-        amount_m = re.search(r"Amount:\s*(.*)", consolidated_block, re.IGNORECASE)
+        file_id = file_m.group(1).strip() if file_m else ""
 
-        file_id = file_m.group(1).strip().lower() if file_m else ""
-        ref_id = ref_m.group(1).strip().lower() if ref_m else ""
-        vendor_id = vendor_m.group(1).strip().lower() if vendor_m else ""
-        date_id = date_m.group(1).strip().lower() if date_m else ""
-        amount_id = amount_m.group(1).strip().lower() if amount_m else ""
-
-        # Build precise fingerprint using available identifiers
-        if file_id or ref_id:
-            fingerprint = f"{file_id}|{ref_id}|{vendor_id}|{date_id}|{amount_id}"
-        elif vendor_id and date_id and amount_id:
-            fingerprint = f"{vendor_id}|{date_id}|{amount_id}"
+        # If File Name exists, use EXACT File Name as unique identifier
+        if file_id:
+            fingerprint = f"file:{file_id.lower()}"
         else:
-            # Hash/use exact string content if headers are missing
+            # Fallback to exact text fingerprint if file name missing
             fingerprint = re.sub(r"\s+", "", consolidated_block).lower()
 
         if fingerprint in seen_fingerprints:
-            print(f"Skipping duplicate receipt fingerprint: {fingerprint[:60]}...")
+            print(f"Skipping duplicate block: {fingerprint[:50]}")
             continue
 
         seen_fingerprints.add(fingerprint)
