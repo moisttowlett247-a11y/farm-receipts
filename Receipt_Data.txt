@@ -1,0 +1,19 @@
+File Name: Farm-General__The_Tool_Store___1000002293.jpg
+Category: Farm:General
+Vendor: The Tool Store
+Receipt Date: 2026-09-04
+Date Source Line: 09/04/2026
+Payment Method: CapitalOne Debit ending in 8582
+Reference #: 2-12380
+Subtotal: $93.99
+Sales Tax: $7.52
+Amount: $101.51
+Items:
+  - Husky 0210342a corded air compressor - $50.00
+  - Regal air hose - $26.00
+  - ITAL SLCE - $6.99
+  - Regal quick connect set - $6.00
+  - Air chuck used - $2.00
+  - Tape - $3.00
+  - Air gauge - $3.00
+--------------------------------------------------
