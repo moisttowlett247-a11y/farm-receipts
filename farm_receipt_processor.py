@@ -180,10 +180,10 @@ def download_new_receipts():
     return None, []
 
 # =====================================================================
-# THREAD-ISOLATED VISION ENGINE (GEMINI 3.5 FLASH LITE WITH MULTI-CROP ANALYSIS)
+# THREAD-ISOLATED VISION ENGINE
 # =====================================================================
 def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
-    """Processes receipt images with high-contrast date crops, strict cross-verification, and QuickBooks extraction."""
+    """Processes receipt images and extracts metadata along with raw line items including UPC/barcode numbers."""
     full_b64, top_b64, bot_b64 = prepare_image_variants(img_obj)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={assigned_key}"
 
@@ -196,26 +196,15 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- Receipts are dated 2025 or later.\n"
         "- Locate the printed transaction timestamp on the receipt (Header or Footer).\n"
         "- Standard US date format: MM/DD/YY or MM/DD/YYYY.\n"
-        "- Month is 01-12, Day is 01-31, Year is 2025 or later (e.g., '25' = 2025, '26' = 2026).\n"
-        "- THERMAL DISTORTION CHECK: Thermal printing often blurs '8' into '9' or '0'. Carefully inspect the loops on the high-contrast crops before choosing digits.\n"
-        "- CROSS-CHECK: Verify the date against receipt transaction lines (e.g., 'ST# ... TE# ... 08/24/25').\n"
-        "- Extract raw_date_text exactly as printed (e.g., '08/24/25'). Do NOT swap month/day positions.\n"
+        "- Month is 01-12, Day is 01-31, Year is 2025 or later.\n"
+        "- Extract raw_date_text exactly as printed (e.g., '08/24/25').\n"
         "- Return month, day, and 4-digit year as separate strings.\n\n"
         "QUICKBOOKS ACCOUNTING EXTRACTION RULES:\n"
-        "- Identify store 'vendor' name (e.g., 'Walmart').\n"
+        "- Identify store 'vendor' name.\n"
         "- Assign 'category' strictly to 'Farm:Cows', 'Farm:Chickens', or 'Farm:General'.\n"
-        "- Extract payment_method (e.g., 'Visa ending in 4321', 'Cash', 'Checking'). Default to 'Not Specified' if not found.\n"
-        "- Extract ref_number (Order #, Invoice #, or Trans ID). Default to 'N/A' if not found.\n"
-        "- Extract subtotal as float string (e.g., '140.00').\n"
-        "- Extract sales_tax as float string (e.g., '5.50').\n"
-        "- Extract total (grand total) as float string (e.g., '145.50'). Do NOT confuse subtotal with total.\n"
+        "- Extract payment_method, ref_number, subtotal, sales_tax, and total.\n"
         "- Extract line items into 'items' array.\n"
-        "- STRICT ITEM CONSOLIDATION & QUANTITY RULE:\n"
-        "  1. Scan the full receipt for ALL occurrences of each item, whether printed on a single line with a multiplier (e.g. '2 @ 0.44') OR printed on separate individual lines (e.g. two separate lines for 'DG RSNC PEP' or 'ITAL SLCE').\n"
-        "  2. Combine identical items into ONE single line entry in the JSON 'items' list.\n"
-        "  3. Set 'qty' to the total count purchased across the whole receipt (e.g., '2').\n"
-        "  4. Set 'price' to the TOTAL COMBINED price for all units of that item (e.g. if one Italian bread is $0.88 and you bought 2, set price to '1.76').\n"
-        "- CLEAN ITEM DESCRIPTION: Exclude store barcode numbers, UPC codes, or tax flags from the item name."
+        "- ITEM EXTRACTION RULE: Extract every line item printed on the receipt as printed. Include the item name, line price, and UPC/barcode number at the end if printed."
     )
 
     payload = {
@@ -245,20 +234,19 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
                                 "subtotal": {"type": "STRING"},
                                 "sales_tax": {"type": "STRING"},
                                 "total": {"type": "STRING"},
-                                "month": {"type": "STRING", "description": "2-digit month e.g. '08'"},
-                                "day": {"type": "STRING", "description": "2-digit day e.g. '24'"},
-                                "year": {"type": "STRING", "description": "4-digit year e.g. '2025' or '2026'"},
+                                "month": {"type": "STRING"},
+                                "day": {"type": "STRING"},
+                                "year": {"type": "STRING"},
                                 "raw_date_text": {"type": "STRING"},
                                 "items": {
                                     "type": "ARRAY",
                                     "items": {
                                         "type": "OBJECT",
                                         "properties": {
-                                            "name": {"type": "STRING", "description": "Clean item description without barcodes"},
-                                            "qty": {"type": "STRING", "description": "Total quantity purchased, default to '1'"},
-                                            "price": {"type": "STRING", "description": "Total combined price for this line item"}
+                                            "name": {"type": "STRING", "description": "Item description with UPC/barcode number at the end if present"},
+                                            "price": {"type": "STRING", "description": "Line item price"}
                                         },
-                                        "required": ["name", "qty", "price"]
+                                        "required": ["name", "price"]
                                     }
                                 }
                             },
@@ -323,12 +311,10 @@ def process_single_email_group(args):
             sales_tax = receipt.get('sales_tax', '').strip()
             total = receipt.get('total', '[Amount Not Found]').strip()
             raw_date_line = receipt.get('raw_date_text', '').strip()
-            items_list = receipt.get('items', [])
+            raw_items_list = receipt.get('items', [])
 
-            # --- MULTI-YEAR DATE EXTRACTION & VALIDATION ENGINE ---
+            # --- MULTI-YEAR DATE EXTRACTION ---
             receipt_date = None
-
-            # Attempt 1: Regex parse from raw text string
             regex_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', raw_date_line)
             if regex_match:
                 m_str, d_str, y_str = regex_match.groups()
@@ -337,11 +323,9 @@ def process_single_email_group(args):
                     y_str = f"20{y_str}"
                 y_int = int(y_str)
 
-                # Validate month (1-12), day (1-31), year (2025+)
                 if 1 <= m_int <= 12 and 1 <= d_int <= 31 and 2025 <= y_int <= 2030:
                     receipt_date = f"{y_str}-{m_str.zfill(2)}-{d_str.zfill(2)}"
 
-            # Attempt 2: Fall back to structured JSON model fields
             if not receipt_date:
                 m_str = receipt.get('month', '').strip().zfill(2)
                 d_str = receipt.get('day', '').strip().zfill(2)
@@ -354,11 +338,9 @@ def process_single_email_group(args):
                     if 1 <= m_int <= 12 and 1 <= d_int <= 31 and 2025 <= y_int <= 2030:
                         receipt_date = f"{y_str}-{m_str.zfill(2)}-{d_str.zfill(2)}"
 
-            # Safety fallback for unparseable dates
             if not receipt_date:
                 receipt_date = f"[VERIFY DATE: {raw_date_line or 'Unclear'}]"
 
-            # Currency Formatting
             if total and not str(total).startswith('$'):
                 total = f"${total}"
             if subtotal and not str(subtotal).startswith('$'):
@@ -367,19 +349,13 @@ def process_single_email_group(args):
                 sales_tax = f"${sales_tax}"
 
             item_lines = []
-            if items_list:
-                for item in items_list:
+            if raw_items_list:
+                for item in raw_items_list:
                     if isinstance(item, dict):
                         name = item.get('name', 'Unknown Item').strip()
-                        qty = item.get('qty', '1').strip()
-                        price = item.get('price', '').strip()
-
-                        price_str = f" - ${price}" if price else ""
-                        qty_str = f" (Qty: {qty})" if qty and qty != '1' else ""
-
-                        item_lines.append(f"  - {name}{price_str}{qty_str}\n")
-                    else:
-                        item_lines.append(f"  - {item}\n")
+                        raw_price = str(item.get('price', '')).replace('$', '').strip()
+                        price_str = f" - ${raw_price}" if raw_price else ""
+                        item_lines.append(f"  - {name}{price_str}\n")
                 formatted_items = "".join(item_lines)
             else:
                 formatted_items = "  - [No Items Found]\n"
@@ -467,9 +443,6 @@ def process_receipts(mail_session, email_packages, processed_dir):
         except Exception:
             pass
 
-# =====================================================================
-# MAIN ENTRY
-# =====================================================================
 if __name__ == "__main__":
     print(f"[{time.strftime('%H:%M:%S')}] Free Farm Receipt Processor Initialized.", flush=True)
     processed_folder = setup_folders()
