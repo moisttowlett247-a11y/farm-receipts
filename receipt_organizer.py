@@ -21,7 +21,7 @@ def sort_and_deduplicate_receipt_file():
     receipt_blocks = []
     seen_fingerprints = set()
 
-    for block in raw_blocks:
+    for idx, block in enumerate(raw_blocks):
         block_str = block.strip()
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
@@ -39,13 +39,17 @@ def sort_and_deduplicate_receipt_file():
         date_id = date_m.group(1).strip().lower() if date_m else ""
         amount_id = amount_m.group(1).strip().lower() if amount_m else ""
 
-        # Fingerprint filtering based on Vendor + Date + Amount (or File/Ref ID if present)
-        if file_id or ref_id:
-            fingerprint = f"{file_id}|{ref_id}|{vendor_id}|{date_id}|{amount_id}"
+        # Priority 1: File Name / Reference # (Guarantees unique files are never dropped)
+        if file_id:
+            fingerprint = f"file:{file_id}"
+        elif ref_id:
+            fingerprint = f"ref:{ref_id}"
+        # Priority 2: Vendor + Date + Amount matching
         elif vendor_id and date_id and amount_id:
-            fingerprint = f"{vendor_id}|{date_id}|{amount_id}"
+            fingerprint = f"vda:{vendor_id}|{date_id}|{amount_id}"
+        # Priority 3: Block index fallback if metadata is unparseable
         else:
-            fingerprint = re.sub(r"\s+", "", block_str).lower()
+            fingerprint = f"block_{idx}:" + re.sub(r"\s+", "", block_str).lower()
 
         if fingerprint in seen_fingerprints:
             print(f"Skipping duplicate receipt block: {fingerprint[:60]}...")
