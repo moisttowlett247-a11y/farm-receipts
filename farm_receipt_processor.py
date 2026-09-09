@@ -210,8 +210,11 @@ def analyze_image_with_gemini(img_obj, assigned_key, max_fast_retries=1):
         "- Extract sales_tax as float string (e.g., '5.50').\n"
         "- Extract total (grand total) as float string (e.g., '145.50'). Do NOT confuse subtotal with total.\n"
         "- Extract line items into 'items' array.\n"
-        "- MULTIPLE QUANTITIES RULE: If an item is bought in multiple quantities (e.g., 2 loaves of bread at $0.44 each), "
-        "combine them into ONE line entry. Set 'qty' to the total count (e.g., '2'), and set 'price' to the TOTAL line price (e.g., '0.88').\n"
+        "- STRICT ITEM CONSOLIDATION & QUANTITY RULE:\n"
+        "  1. Scan the full receipt for ALL occurrences of each item, whether printed on a single line with a multiplier (e.g. '2 @ 0.44') OR printed on separate individual lines (e.g. two separate lines for 'DG RSNC PEP' or 'ITAL SLCE').\n"
+        "  2. Combine identical items into ONE single line entry in the JSON 'items' list.\n"
+        "  3. Set 'qty' to the total count purchased across the whole receipt (e.g., '2').\n"
+        "  4. Set 'price' to the TOTAL COMBINED price for all units of that item (e.g. if one Italian bread is $0.88 and you bought 2, set price to '1.76').\n"
         "- CLEAN ITEM DESCRIPTION: Exclude store barcode numbers, UPC codes, or tax flags from the item name."
     )
 
