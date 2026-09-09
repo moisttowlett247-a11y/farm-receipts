@@ -26,17 +26,29 @@ def sort_and_deduplicate_receipt_file():
         if not block_str or "BATCH RUN DATE" in block_str:
             continue
 
-        # Unique Fingerprint per receipt file
+        # Extract primary metadata fields
         file_m = re.search(r"File Name:\s*(.*)", block_str, re.IGNORECASE)
-        file_id = file_m.group(1).strip() if file_m else ""
+        ref_m = re.search(r"Reference #:\s*(.*)", block_str, re.IGNORECASE)
+        vendor_m = re.search(r"Vendor:\s*(.*)", block_str, re.IGNORECASE)
+        date_m = re.search(r"Receipt Date:\s*(.*)", block_str, re.IGNORECASE)
+        amount_m = re.search(r"Amount:\s*(.*)", block_str, re.IGNORECASE)
 
-        if file_id:
-            fingerprint = f"file:{file_id.lower()}"
+        file_id = file_m.group(1).strip().lower() if file_m else ""
+        ref_id = ref_m.group(1).strip().lower() if ref_m else ""
+        vendor_id = vendor_m.group(1).strip().lower() if vendor_m else ""
+        date_id = date_m.group(1).strip().lower() if date_m else ""
+        amount_id = amount_m.group(1).strip().lower() if amount_m else ""
+
+        # Fingerprint filtering based on Vendor + Date + Amount (or File/Ref ID if present)
+        if file_id or ref_id:
+            fingerprint = f"{file_id}|{ref_id}|{vendor_id}|{date_id}|{amount_id}"
+        elif vendor_id and date_id and amount_id:
+            fingerprint = f"{vendor_id}|{date_id}|{amount_id}"
         else:
             fingerprint = re.sub(r"\s+", "", block_str).lower()
 
         if fingerprint in seen_fingerprints:
-            print(f"Skipping duplicate receipt block: {fingerprint[:50]}")
+            print(f"Skipping duplicate receipt block: {fingerprint[:60]}...")
             continue
 
         seen_fingerprints.add(fingerprint)
