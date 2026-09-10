@@ -1,0 +1,191 @@
+
+==================================================
+BATCH RUN DATE: 2026-09-10 18:25:31
+==================================================
+File Name: Farm-General__HARVEST_RIDGE_AG_SUP___1000002304.jpg
+Category: Farm:General
+Vendor: HARVEST RIDGE AG SUP
+Receipt Date: 2025-05-21
+Date Source Line: 05/21/2025
+Payment Method: Discover ending in 7114
+Reference #: 11476112
+Subtotal: $159.97
+Sales Tax: $11.59
+Amount: $171.55
+Items:
+  - 50lb ORGANIC LAYER FEED - $32.99 (50lb)
+  - BALE ALFALFA HAY - $39.00 (1)
+  - FENCING WIRE ROLL (17ga) - $48.00 (1)
+  - GAL WEED & GRASS KILLER - $69.98 (2)
+--------------------------------------------------
+File Name: Farm-Chickens__PRAIRIE_PINES_FARM_S___1000002305.jpg
+Category: Farm:Chickens
+Vendor: PRAIRIE PINES FARM S
+Receipt Date: 2025-08-15
+Date Source Line: 08/15/2025
+Payment Method: Mastercard ending in 5814
+Reference #: 11476015
+Subtotal: $119.95
+Sales Tax: $8.70
+Amount: $128.65
+Items:
+  - 50lb CHICKEN GRAIN MIX - $32.95 (50lb)
+  - BALE TIMOTHY HAY - $39.00 (N/A)
+  - GAL ANIMAL WORMER - $48.00 (N/A)
+--------------------------------------------------
+File Name: Farm-Chickens__PRAIRIE_PINES_FEED_&___1000002300.jpg
+Category: Farm:Chickens
+Vendor: PRAIRIE PINES FEED &
+Receipt Date: 2025-10-21
+Date Source Line: 10/21/2025
+Payment Method: Discover ending in 6814
+Reference #: 11475901
+Subtotal: $154.94
+Sales Tax: $11.23
+Amount: $166.17
+Items:
+  - 50lb CHICKEN GRAIN MIX - $32.95 (50lb)
+  - BALE TIMOTHY HAY - $39.00 (N/A)
+  - GAL ANIMAL WORMER - $48.00 (N/A)
+  - 50lb LAYER PELLETS - $34.99 (50lb)
+--------------------------------------------------
+File Name: Farm-General__HARVEST_RIDGE_AG_SUP___1000002301.jpg
+Category: Farm:General
+Vendor: HARVEST RIDGE AG SUP
+Receipt Date: 2025-11-15
+Date Source Line: 11/15/2025
+Payment Method: MASTERCARD ending in 1458
+Reference #: 11476010
+Subtotal: $170.47
+Sales Tax: $12.36
+Amount: $182.83
+Items:
+  - 50lb CHICKEN STARTER FEED - $32.99 (50 lb)
+  - BALE ALFALFA HAY - $19.50 (N/A)
+  - FENCING WIRE ROLL (17ga) - $48.50 (N/A)
+  - GAL TRACTOR HYD. FLUID - $34.99 (N/A)
+--------------------------------------------------
+File Name: Farm-General__PRAIRIE_PINES_AG_SUP___1000002306.jpg
+Category: Farm:General
+Vendor: PRAIRIE PINES AG SUP
+Receipt Date: 2025-11-15
+Date Source Line: 11/15/2025
+Payment Method: Mastercard ending in 5814
+Reference #: 11476056
+Subtotal: $144.45
+Sales Tax: $10.47
+Amount: $154.92
+Items:
+  - 50LB CHICKEN STARTER FEED - $32.95 (50LB)
+  - BALE TIMOTHY HAY - $19.50 (N/A)
+  - GAL ANIMAL WORMER - $48.00 (N/A)
+  - 50LB OATS - $24.50 (50LB)
+--------------------------------------------------
+File Name: Farm-General__Countryside_Farm_&_G___1000002307.jpg
+Category: Farm:General
+Vendor: Countryside Farm & G
+Receipt Date: 2025-11-18
+Date Source Line: 11/18/2025
+Payment Method: Discover ending in 8891
+Reference #: 11477010
+Subtotal: $176.43
+Sales Tax: $12.79
+Amount: $189.22
+Items:
+  - S01b ORGANIC LAYER FEED - $34.95 (1)
+  - BALE ALFALFA HAY - $17.50 (2)
+  - S01b BAG GARDEN LIME - $22.00 (1)
+  - GAL WEED & GRASS KILLER - $32.99 (2)
+  - PAIR WORK GLOVES (L) - $18.50 (1)
+--------------------------------------------------
+File Name: Farm-General__THE_OAKHAVEN_HARDWAR___1000002308.jpg
+Category: Farm:General
+Vendor: THE OAKHAVEN HARDWAR
+Receipt Date: 2025-11-21
+Date Source Line: 11/21/2025
+Payment Method: MASTERCARD ending in 7734
+Reference #: 11477055
+Subtotal: $250.93
+Sales Tax: $18.19
+Amount: $269.12
+Items:
+  - HAMMER, CLAW, 16OZ - $24.99 (N/A)
+  - TAPE MEASURE, 25FT - $19.50 (N/A)
+  - PACK SCREWS, WOOD 1.5IN (50) - $6.50 (N/A)
+  - SCREWDRIVER SET, 8PC - $32.00 (N/A)
+  - PLIERS, LINESMAN, 9IN - $28.50 (N/A)
+  - DRILL BIT SET, 21PC - $45.00 (N/A)
+  - LEVEL, TORPEDO, 9IN - $14.99 (N/A)
+  - UTILITY KNIFE, RETRACTABLE - $9.95 (N/A)
+  - WORK GLOVES, LEATHER, L - $22.00 (N/A)
+  - EXTENSION CORD, 50FT - $39.50 (N/A)
+--------------------------------------------------
+File Name: Farm-General__PRAIRIE_PINES_AG_SUP___1000002309.jpg
+Category: Farm:General
+Vendor: PRAIRIE PINES AG SUP
+Receipt Date: 2025-11-28
+Date Source Line: 11/28/2025
+Payment Method: Mastercard ending in 9876
+Reference #: 11477088
+Subtotal: $605.44
+Sales Tax: $43.89
+Amount: $649.33
+Items:
+  - 50LB CHICKEN STARTER CRUMBLES - $32.50 (100LB)
+  - BALE TIMOTHY HAY - $39.00 (N/A)
+  - GAL ANIMAL WORMER (IVERMECTIN) - $48.00 (N/A)
+  - 50LB UREA FERTILIZER (46-0-0) - $34.99 (50LB)
+  - ROLL BARBED WIDE MESH FENCE - $125.00 (N/A)
+  - BOX FENCING STAPLES (5LB) - $12.95 (5LB)
+  - 2-PACK LIVESTOCK WATER TANK HEATER - $55.00 (N/A)
+  - 55GAL DRUM TRACTOR HYD. FLUID - $249.00 (55GAL)
+  - TUBE HEAVY DUTY GREASE - $8.50 (N/A)
+--------------------------------------------------
+File Name: Farm-General__HARVEST_RIDGE_AG_SUP___1000002302.jpg
+Category: Farm:General
+Vendor: HARVEST RIDGE AG SUP
+Receipt Date: 2025-12-01
+Date Source Line: 12/01/2025
+Payment Method: MASTERCARD ending in 1458
+Reference #: 11476015
+Subtotal: $151.44
+Sales Tax: $10.98
+Amount: $162.42
+Items:
+  - 50lb ORGANIC CHICKEN FEED - $34.50 (50lb)
+  - 25lb DOG FOOD - SALMON - $41.99 (25lb)
+  - GAL LIQUID FERTILIZER - $27.50 (1 GAL)
+  - CATTLE WORMER PASTE - $19.95 (N/A)
+--------------------------------------------------
+File Name: Farm-Cows__COUNTRYSIDE_FARM_&_F___1000002299.jpg
+Category: Farm:Cows
+Vendor: COUNTRYSIDE FARM & F
+Receipt Date: 2025-12-03
+Date Source Line: 12/03/2025
+Payment Method: Mastercard ending in 9281
+Reference #: 9472035176
+Subtotal: $129.63
+Sales Tax: $9.40
+Amount: $139.03
+Items:
+  - 50lb CATTLE FEED PELLET - $24.99 (50lb)
+  - BAGS ALFALFA HAY CUBES - $37.00 (N/A)
+  - FENCING WIRE ROLL (17ga) - $45.65 (N/A)
+  - GAL TRACTOR HYD. FLUID - $21.99 (N/A)
+--------------------------------------------------
+File Name: Farm-General__COUNTRYSIDE_AG_&_FEE___1000002303.jpg
+Category: Farm:General
+Vendor: COUNTRYSIDE AG & FEE
+Receipt Date: 2026-01-14
+Date Source Line: 01/14/2026
+Payment Method: Visa ending in 8891
+Reference #: 11476098
+Subtotal: $115.65
+Sales Tax: $8.38
+Amount: $124.03
+Items:
+  - 50lb ALFALFA HAY CUBES - $18.50 (50lb)
+  - GAL TRACTOR HYD. FLUID - $53.90 (N/A)
+  - FENCING PLIERS SET - $32.00 (N/A)
+  - 25lb BAG CHICKEN GRIT - $11.25 (25lb)
+--------------------------------------------------
